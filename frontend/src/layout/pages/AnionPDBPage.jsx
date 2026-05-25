@@ -1,9 +1,63 @@
+import { useMemo, useState } from "react";
 import Header from "../components/Header";
 import { anionFilters } from "../homePageData";
+import { storeBindingSite, useBindingSites } from "../useBindingSites";
 
 export default function AnionPDBPage({ setPage }) {
+  const { error, isLoading, manifest, sites } = useBindingSites();
+  const [query, setQuery] = useState("");
+  const [activeLigands, setActiveLigands] = useState(() =>
+    new Set(["Phosphate", "Sulfate", "Chloride", "Nitrate"]),
+  );
+
   const openPhosFate = (event) => {
     event.preventDefault();
+    setPage("phosfate");
+  };
+
+  const filteredSites = useMemo(() => {
+    const normalizedQuery = query.trim().toLowerCase();
+
+    return sites.filter((site) => {
+      const ligandMatches = activeLigands.has(site.ligand);
+      if (!ligandMatches) {
+        return false;
+      }
+
+      if (!normalizedQuery) {
+        return true;
+      }
+
+      return [
+        site.id,
+        site.ligand,
+        site.pdbId,
+        site.chain,
+        String(site.site),
+        site.residueIndices.join(" "),
+      ]
+        .join(" ")
+        .toLowerCase()
+        .includes(normalizedQuery);
+    });
+  }, [activeLigands, query, sites]);
+
+  const visibleSites = filteredSites.slice(0, 25);
+
+  const toggleLigand = (ligand) => {
+    setActiveLigands((currentLigands) => {
+      const nextLigands = new Set(currentLigands);
+      if (nextLigands.has(ligand)) {
+        nextLigands.delete(ligand);
+      } else {
+        nextLigands.add(ligand);
+      }
+      return nextLigands;
+    });
+  };
+
+  const selectForPhosFate = (site) => {
+    storeBindingSite(site);
     setPage("phosfate");
   };
 
@@ -31,24 +85,28 @@ export default function AnionPDBPage({ setPage }) {
               <input
                 id="anion-pdb-entry"
                 list="anion-pdb-options"
+                onChange={(event) => setQuery(event.target.value)}
                 placeholder="Search or type a PDB entry"
+                value={query}
               />
               <datalist id="anion-pdb-options">
-                <option value="1TQN" />
-                <option value="2GOO" />
-                <option value="3PLC" />
-                <option value="4OM5" />
-                <option value="6AU7" />
+                {sites.slice(0, 80).map((site) => (
+                  <option key={site.id} value={site.pdbId} />
+                ))}
               </datalist>
               <div className="buttons">
-                <button type="button">Search example</button>
-                <button type="button">Clear</button>
+                <button type="button" onClick={() => setQuery("2G25")}>
+                  Search example
+                </button>
+                <button type="button" onClick={() => setQuery("")}>
+                  Clear
+                </button>
               </div>
             </div>
           </div>
 
-          <button className="primary" type="button">
-            Search AnionPDB
+          <button className="primary" type="button" onClick={() => setQuery("")}>
+            Browse recovered sites
           </button>
 
           <div className="card">
@@ -58,8 +116,36 @@ export default function AnionPDBPage({ setPage }) {
             <div className="filters">
               {anionFilters.map((filter) => (
                 <label className="check" key={filter}>
-                  <input type="checkbox" /> {filter}
+                  <input
+                    checked={
+                      !filter.includes("Carbonate") &&
+                      !filter.includes("High-confidence") &&
+                      activeLigands.has(filter.split(" ")[0])
+                    }
+                    disabled={
+                      filter.includes("Carbonate") ||
+                      filter.includes("High-confidence")
+                    }
+                    onChange={() => toggleLigand(filter.split(" ")[0])}
+                    type="checkbox"
+                  />{" "}
+                  {filter}
                 </label>
+              ))}
+            </div>
+          </div>
+
+          <div className="card data-summary">
+            <p className="filter-title">
+              <span className="dot" /> Recovered Distance-5.0 data
+            </p>
+            <div className="summary-grid">
+              {(manifest?.ligands ?? []).map((ligand) => (
+                <div className="summary-item" key={ligand.ligand}>
+                  <span>{ligand.ligand}</span>
+                  <strong>{ligand.siteCount}</strong>
+                  <small>{ligand.projectCount} PDB folders</small>
+                </div>
               ))}
             </div>
           </div>
@@ -79,7 +165,11 @@ export default function AnionPDBPage({ setPage }) {
 
           <div className="result-card">
             <div className="result-top">
-              <strong>59,884 unique anion-binding pockets</strong>
+              <strong>
+                {isLoading
+                  ? "Loading recovered binding sites"
+                  : filteredSites.length + " recovered binding-site records"}
+              </strong>
               <div className="result-controls">
                 <div className="per">PER PAGE</div>
                 <select defaultValue="25">
@@ -101,14 +191,33 @@ export default function AnionPDBPage({ setPage }) {
               <div>SAVE</div>
             </div>
 
-            <div className="empty">
-              <div className="big">59,884</div>
-              <p>
-                Enter a search term or leave it empty and press Search
-                <br />
-                to browse all curated anion-binding pockets.
-              </p>
-            </div>
+            {error ? (
+              <div className="empty">
+                <p>{error}</p>
+              </div>
+            ) : (
+              <div className="site-list">
+                {visibleSites.map((site) => (
+                  <button
+                    className="site-row"
+                    key={site.id}
+                    onClick={() => selectForPhosFate(site)}
+                    type="button"
+                  >
+                    <span>{site.pdbId}</span>
+                    <span>
+                      <b>{site.id}</b>
+                      <small>
+                        chain {site.chain} · site {site.site} · residues{" "}
+                        {site.residueIndices.slice(0, 6).join(", ")}
+                      </small>
+                    </span>
+                    <span>{site.ligand}</span>
+                    <span>Use</span>
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
 
           <div className="download">

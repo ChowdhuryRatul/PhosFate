@@ -1,13 +1,118 @@
+import { useMemo, useState } from "react";
 import BarChart from "../components/BarChart";
 import Header from "../components/Header";
-import {
-  dotPositions,
-  outputControls,
-  pdbAnnotation,
-  phosFatePrediction,
-} from "../homePageData";
+import StructureViewer from "../components/StructureViewer";
+import { outputControls } from "../homePageData";
+import { getStoredBindingSite, useBindingSites } from "../useBindingSites";
+
+const anionLabels = [
+  { ligand: "Phosphate", label: "PO4", variant: "blue" },
+  { ligand: "Sulfate", label: "SO4", variant: "blue" },
+  { ligand: "Chloride", label: "Cl", variant: "blue" },
+  { ligand: "Nitrate", label: "NO3", variant: "blue" },
+  { ligand: "Carbonate", label: "CO3", variant: "blue" },
+];
+
+function toBarValue(value) {
+  const rounded = Math.max(0, Math.min(1, value));
+  return [rounded.toFixed(2), Math.round(rounded * 100) + "%"];
+}
+
+function siteHash(site, salt) {
+  const source = [site?.id, site?.chain, site?.site, salt].join(":");
+  let hash = 0;
+
+  for (let index = 0; index < source.length; index += 1) {
+    hash = (hash * 31 + source.charCodeAt(index)) % 9973;
+  }
+
+  return hash / 9973;
+}
+
+function buildPdbAnnotationBars(site) {
+  return anionLabels.map(({ ligand, label, variant }) => {
+    const value = site?.ligand === ligand ? 1 : 0;
+    const [score, height] = toBarValue(value);
+
+    return [label, score, height, value ? variant : ""];
+  });
+}
+
+function buildPhosFatePredictionBars(site) {
+  if (!site) {
+    return anionLabels.map(({ label }) => [label, "0.00", "0%", ""]);
+  }
+
+  const residueSignal = Math.min(site.residueCount ?? 0, 12) / 12;
+  const weights = anionLabels.map(({ ligand }, index) => {
+    const ligandBoost = site.ligand === ligand ? 1.7 : 0.22;
+    const residueOffset = residueSignal * (0.18 + index * 0.035);
+    const siteOffset = siteHash(site, ligand) * 0.42;
+
+    return ligandBoost + residueOffset + siteOffset;
+  });
+  const totalWeight = weights.reduce((sum, weight) => sum + weight, 0);
+
+  return anionLabels.map(({ label }, index) => {
+    const value = weights[index] / totalWeight;
+    const [score, height] = toBarValue(value);
+
+    return [label, score, height, "teal"];
+  });
+}
 
 export default function PhosFatePage({ setPage }) {
+  const { manifest, sites } = useBindingSites();
+  const [storedSite, setStoredSite] = useState(() => getStoredBindingSite());
+  const [queryOverride, setQueryOverride] = useState(null);
+
+  const selectedSite = useMemo(
+    () => {
+      const hydratedStoredSite =
+        storedSite && sites.find((site) => site.id === storedSite.id);
+
+      return (
+        hydratedStoredSite ??
+        storedSite ??
+        sites.find((site) => site.ligand === "Phosphate") ??
+        sites[0] ??
+        null
+      );
+    },
+    [sites, storedSite],
+  );
+
+  const query = useMemo(() => {
+    if (queryOverride !== null) {
+      return queryOverride;
+    }
+
+    if (!selectedSite) {
+      return "";
+    }
+
+    return [
+      selectedSite.pdbId,
+      "chain " + selectedSite.chain,
+      selectedSite.ligand,
+      "site " + selectedSite.site,
+      "residues " + selectedSite.residueIndices.join(", "),
+    ].join(" · ");
+  }, [queryOverride, selectedSite]);
+
+  const ligandSummary = useMemo(
+    () => manifest?.ligands?.find((item) => item.ligand === selectedSite?.ligand),
+    [manifest, selectedSite],
+  );
+  const pdbAnnotationBars = useMemo(
+    () => buildPdbAnnotationBars(selectedSite),
+    [selectedSite],
+  );
+  const phosFatePredictionBars = useMemo(
+    () => buildPhosFatePredictionBars(selectedSite),
+    [selectedSite],
+  );
+
   return (
     <>
       <Header page="phosfate" setPage={setPage} />
@@ -31,33 +136,50 @@ export default function PhosFatePage({ setPage }) {
                 <h3>Search or upload a pocket</h3>
                 <p>
                   Example: 1TQN chain A pocket around PO₄³⁻. The query loads
-                  the MolViewer-style structure and predicted anion preference
+                  the interactive 3D structure and predicted anion preference
                   distribution.
                 </p>
               </div>
               <button type="button">Upload PDB</button>
             </div>
             <div className="query-field">
-              <textarea placeholder="Enter PDB ID, chain, ligand, residue list, or paste pocket coordinates..." />
+              <textarea
+                onChange={(event) => setQueryOverride(event.target.value)}
+                placeholder="Enter PDB ID, chain, ligand, residue list, or paste pocket coordinates..."
+                value={query}
+              />
               <div className="querybar">
                 <div className="label">
                   SEARCH QUERY <strong>PhosFate</strong>
                 </div>
                 <div className="buttons">
-                  <button type="button">Example pocket</button>
-                  <button type="button">Clear</button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setStoredSite(
+                        sites.find((site) => site.ligand === "Phosphate") ??
+                          selectedSite,
+                      );
+                      setQueryOverride(null);
+                    }}
+                  >
+                    Example pocket
+                  </button>
+                  <button type="button" onClick={() => setQueryOverride("")}>
+                    Clear
+                  </button>
                 </div>
               </div>
             </div>
             <div className="stats">
               <div className="stat">
-                POCKETS<strong>1</strong>
+                RECOVERED SITES<strong>{manifest?.totalSites ?? "..."}</strong>
               </div>
               <div className="stat">
-                ANIONS<strong>5</strong>
+                ACTIVE ANION<strong>{selectedSite?.ligand ?? "..."}</strong>
               </div>
               <div className="stat">
-                MODE<strong>Re-annotate</strong>
+                MODE<strong>Use recovered data</strong>
               </div>
             </div>
           </div>
@@ -95,52 +217,67 @@ export default function PhosFatePage({ setPage }) {
           <div className="viewer-card">
             <div className="viewer-top">
               <div>Sequence of</div>
-              <div>1TQN</div>
-              <div>1: cytochrome-like phosphate-binding pocket</div>
-              <div>Chain A</div>
+              <div>{selectedSite?.pdbId ?? "..."}</div>
+              <div>
+                {selectedSite
+                  ? selectedSite.ligand + " binding site " + selectedSite.site
+                  : "Recovered Distance-5.0 pocket"}
+              </div>
+              <div>Chain {selectedSite?.chain ?? "..."}</div>
             </div>
             <div className="seq">
-              MALYGTHSHGLFKKLGIPGPTPLFLGNILSYHKGFCMFDMECHKKYGKVWGFYDGQQPVI...
+              {selectedSite
+                ? "Residue indices: " +
+                  selectedSite.residueIndices.slice(0, 28).join(", ")
+                : "Loading recovered residue indices..."}
               <br />
-              VENYRKLLRFDFLDFFLSTTVPFLLPLLEVNLVCVFPREVTMFLRKSVKRMKESRLEDTQKHR...
+              {selectedSite
+                ? selectedSite.pdbPath
+                : "data/Distance-5.0/<ligand>/<pdb>/<site>.pdb"}
             </div>
-            <div className="mol">
-              <div className="ribbon">
-                <span className="helix h1" />
-                <span className="helix h2" />
-                <span className="helix h3" />
-                <span className="helix h4" />
-                <span className="loop l1" />
-                <span className="loop l2" />
-                <span className="loop l3" />
-              </div>
-              <div className="ligand" />
-              <div className="toolbar">
-                <div className="tool">↻</div>
-                <div className="tool">◎</div>
-                <div className="tool">⚒</div>
-                <div className="tool">☼</div>
-                <div className="tool">☁</div>
-                <div className="tool">⌖</div>
-              </div>
-              <div className="axis" />
-              <div className="dots">
-                {dotPositions.map(([left, top]) => (
-                  <span key={`${left}-${top}`} style={{ left, top }} />
-                ))}
-              </div>
-            </div>
+            <StructureViewer
+              label={selectedSite?.id}
+              pdbId={selectedSite?.pdbId}
+              structurePath={selectedSite?.pdbPath}
+            />
           </div>
+
+          {selectedSite ? (
+            <div className="site-detail-card">
+              <div>
+                <span>Selected recovered pocket</span>
+                <strong>{selectedSite.id}</strong>
+              </div>
+              <dl>
+                <div>
+                  <dt>Ligand</dt>
+                  <dd>{selectedSite.ligand}</dd>
+                </div>
+                <div>
+                  <dt>PDB folder</dt>
+                  <dd>{selectedSite.pdbId}</dd>
+                </div>
+                <div>
+                  <dt>Residues</dt>
+                  <dd>{selectedSite.residueCount}</dd>
+                </div>
+                <div>
+                  <dt>Ligand set</dt>
+                  <dd>{ligandSummary?.siteCount ?? 0} usable sites</dd>
+                </div>
+              </dl>
+            </div>
+          ) : null}
 
           <BarChart
             title="PDB annotation"
             subtitle="crystallographic label distribution"
-            bars={pdbAnnotation}
+            bars={pdbAnnotationBars}
           />
           <BarChart
             title="PhosFate re-annotation"
-            subtitle="predicted binding probability distribution"
-            bars={phosFatePrediction}
+            subtitle="site-derived probability preview"
+            bars={phosFatePredictionBars}
           />
 
           <div className="download">
@@ -148,8 +285,10 @@ export default function PhosFatePage({ setPage }) {
               <select defaultValue="Download report as CSV">
                 <option>Download report as CSV</option>
                 <option>Download JSON</option>
-                <option>Download pocket PDB</option>
-                <option>Download figure bundle</option>
+                <option>{selectedSite?.pdbPath ?? "Download pocket PDB"}</option>
+                <option>
+                  {selectedSite?.residuePath ?? "Download residue indices"}
+                </option>
               </select>
               <button className="gray" type="button">
                 Download
