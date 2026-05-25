@@ -1,13 +1,17 @@
 import { useMemo, useState } from "react";
 import Header from "../components/Header";
 import { anionFilters } from "../homePageData";
-import { storeBindingSite, useBindingSites } from "../useBindingSites";
+import {
+  AVAILABLE_LIGANDS,
+  storeBindingSite,
+  useBindingSites,
+} from "../useBindingSites";
 
 export default function AnionPDBPage({ setPage }) {
   const { error, isLoading, manifest, sites } = useBindingSites();
   const [query, setQuery] = useState("");
   const [activeLigands, setActiveLigands] = useState(() =>
-    new Set(["Phosphate", "Sulfate", "Chloride", "Nitrate"]),
+    new Set(AVAILABLE_LIGANDS),
   );
 
   const openPhosFate = (event) => {
@@ -120,11 +124,13 @@ export default function AnionPDBPage({ setPage }) {
                     checked={
                       !filter.includes("Carbonate") &&
                       !filter.includes("High-confidence") &&
+                      AVAILABLE_LIGANDS.has(filter.split(" ")[0]) &&
                       activeLigands.has(filter.split(" ")[0])
                     }
                     disabled={
                       filter.includes("Carbonate") ||
-                      filter.includes("High-confidence")
+                      filter.includes("High-confidence") ||
+                      !AVAILABLE_LIGANDS.has(filter.split(" ")[0])
                     }
                     onChange={() => toggleLigand(filter.split(" ")[0])}
                     type="checkbox"

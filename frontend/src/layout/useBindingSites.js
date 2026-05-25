@@ -1,6 +1,22 @@
 import { useEffect, useMemo, useState } from "react";
 
 const SELECTED_SITE_KEY = "phosfate:selected-binding-site";
+export const AVAILABLE_LIGANDS = new Set(["Phosphate", "Chloride", "Nitrate"]);
+
+function onlyAvailableLigands(data) {
+  const sites = (data.sites ?? []).filter((site) =>
+    AVAILABLE_LIGANDS.has(site.ligand),
+  );
+
+  return {
+    ...data,
+    ligands: (data.ligands ?? []).filter((ligand) =>
+      AVAILABLE_LIGANDS.has(ligand.ligand),
+    ),
+    sites,
+    totalSites: sites.length,
+  };
+}
 
 export function useBindingSites() {
   const [manifest, setManifest] = useState(null);
@@ -18,7 +34,7 @@ export function useBindingSites() {
       })
       .then((data) => {
         if (!cancelled) {
-          setManifest(data);
+          setManifest(onlyAvailableLigands(data));
         }
       })
       .catch((loadError) => {

@@ -13,6 +13,33 @@ function resolveStructureUrl(path) {
   return new URL(normalizedPath, window.location.origin).href;
 }
 
+function isPdbText(text) {
+  return text.split("\n").some((line) => (
+    line.startsWith("ATOM") ||
+    line.startsWith("HETATM") ||
+    line.startsWith("HEADER") ||
+    line.startsWith("TITLE") ||
+    line.startsWith("MODEL") ||
+    line.startsWith("COMPND") ||
+    line.startsWith("REMARK")
+  ));
+}
+
+async function readPdbResponse(response, sourceLabel) {
+  if (!response?.ok) {
+    throw new Error(sourceLabel + " returned HTTP " + (response?.status ?? "0"));
+  }
+
+  const contentType = response.headers.get("content-type") ?? "";
+  const pdbText = await response.text();
+
+  if (contentType.includes("text/html") || !isPdbText(pdbText)) {
+    throw new Error(sourceLabel + " did not return PDB content");
+  }
+
+  return pdbText;
+}
+
 function applyDefaultStyle(viewer) {
   viewer.setBackgroundColor("white");
   viewer.setStyle(
@@ -95,26 +122,34 @@ export default function StructureViewer({ label, pdbId, structurePath }) {
         setStatus("Loading " + (label ?? "structure") + "...");
         viewer.clear();
 
-        const response = structureUrl
-          ? await fetch(structureUrl, { method: "GET" })
-          : null;
+        let pdbText = "";
 
-        if (response?.ok) {
-          const pdbText = await response.text();
-          viewer.addModel(pdbText, "pdb");
-        } else if (pdbId) {
-          setStatus("Pocket file unavailable locally. Loading " + pdbId + " from RCSB...");
+        if (structureUrl) {
+          const response = await fetch(structureUrl, { method: "GET" });
+          try {
+            pdbText = await readPdbResponse(response, "Pocket file");
+          } catch (localError) {
+            if (!pdbId) {
+              throw localError;
+            }
+          }
+        }
+
+        if (!pdbText && pdbId) {
+          setStatus(
+            "Pocket file unavailable locally. Loading " + pdbId + " from RCSB...",
+          );
           const rcsbResponse = await fetch(
             "https://files.rcsb.org/download/" + pdbId + ".pdb",
           );
-          if (!rcsbResponse.ok) {
-            throw new Error("RCSB returned HTTP " + rcsbResponse.status);
-          }
-          const pdbText = await rcsbResponse.text();
-          viewer.addModel(pdbText, "pdb");
-        } else {
+          pdbText = await readPdbResponse(rcsbResponse, "RCSB");
+        }
+
+        if (!pdbText) {
           throw new Error("Structure file is unavailable: " + structurePath);
         }
+
+        viewer.addModel(pdbText, "pdb");
 
         if (!cancelled) {
           applyDefaultStyle(viewer);
