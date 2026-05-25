@@ -18,18 +18,79 @@ function toBarValue(value) {
   return [rounded.toFixed(2), Math.round(rounded * 100) + "%"];
 }
 
-function siteHash(site, salt) {
-  const source = [site?.id, site?.chain, site?.site, salt].join(":");
-  let hash = 0;
+function normalizeAnionKey(value) {
+  return String(value ?? "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]/g, "");
+}
 
-  for (let index = 0; index < source.length; index += 1) {
-    hash = (hash * 31 + source.charCodeAt(index)) % 9973;
+function readScoreFromMap(scoreMap, ligand, label) {
+  if (!scoreMap || typeof scoreMap !== "object") {
+    return null;
   }
 
-  return hash / 9973;
+  const acceptedKeys = new Set(
+    [ligand, label, ligand?.toLowerCase(), label?.toLowerCase()].map(
+      normalizeAnionKey,
+    ),
+  );
+  const match = Object.entries(scoreMap).find(([key]) =>
+    acceptedKeys.has(normalizeAnionKey(key)),
+  );
+
+  if (!match) {
+    return null;
+  }
+
+  const value = Number(match[1]);
+  return Number.isFinite(value) ? value : null;
+}
+
+function findScoreMap(site, candidates) {
+  const readPath = (source, path) =>
+    path.split(".").reduce((value, key) => value?.[key], source);
+
+  return candidates
+    .map((key) => readPath(site, key))
+    .find((value) => value && typeof value === "object");
+}
+
+function buildBarsFromScores(scoreMap, variant) {
+  if (!scoreMap) {
+    return null;
+  }
+
+  const values = anionLabels.map(({ ligand, label }) =>
+    readScoreFromMap(scoreMap, ligand, label),
+  );
+
+  if (values.every((value) => value === null)) {
+    return null;
+  }
+
+  return anionLabels.map(({ label }, index) => {
+    const value = values[index] ?? 0;
+    const [score, height] = toBarValue(value);
+
+    return [label, score, height, value > 0 ? variant : ""];
+  });
 }
 
 function buildPdbAnnotationBars(site) {
+  const scoreMap = findScoreMap(site, [
+    "pdbAnnotationScores",
+    "pdb_annotation_scores",
+    "pdbScores",
+    "annotationScores",
+    "scores.pdbAnnotation",
+    "scores.pdb",
+  ]);
+  const scoredBars = buildBarsFromScores(scoreMap, "blue");
+
+  if (scoredBars) {
+    return scoredBars;
+  }
+
   return anionLabels.map(({ ligand, label, variant }) => {
     const value = site?.ligand === ligand ? 1 : 0;
     const [score, height] = toBarValue(value);
@@ -39,26 +100,19 @@ function buildPdbAnnotationBars(site) {
 }
 
 function buildPhosFatePredictionBars(site) {
-  if (!site) {
-    return anionLabels.map(({ label }) => [label, "0.00", "0%", ""]);
-  }
+  const scoreMap = findScoreMap(site, [
+    "phosFateScores",
+    "phosfateScores",
+    "phosfate_scores",
+    "reannotationScores",
+    "reAnnotationScores",
+    "predictionScores",
+    "scores.phosFate",
+    "scores.phosfate",
+    "scores.prediction",
+  ]);
 
-  const residueSignal = Math.min(site.residueCount ?? 0, 12) / 12;
-  const weights = anionLabels.map(({ ligand }, index) => {
-    const ligandBoost = site.ligand === ligand ? 1.7 : 0.22;
-    const residueOffset = residueSignal * (0.18 + index * 0.035);
-    const siteOffset = siteHash(site, ligand) * 0.42;
-
-    return ligandBoost + residueOffset + siteOffset;
-  });
-  const totalWeight = weights.reduce((sum, weight) => sum + weight, 0);
-
-  return anionLabels.map(({ label }, index) => {
-    const value = weights[index] / totalWeight;
-    const [score, height] = toBarValue(value);
-
-    return [label, score, height, "teal"];
-  });
+  return buildBarsFromScores(scoreMap, "teal");
 }
 
 export default function PhosFatePage({ setPage }) {
@@ -271,13 +325,14 @@ export default function PhosFatePage({ setPage }) {
 
           <BarChart
             title="PDB annotation"
-            subtitle="crystallographic label distribution"
+            subtitle="crystallographic ligand label"
             bars={pdbAnnotationBars}
           />
           <BarChart
             title="PhosFate re-annotation"
-            subtitle="site-derived probability preview"
+            subtitle="predicted binding probability distribution"
             bars={phosFatePredictionBars}
+            emptyMessage="No PhosFate score table is present for this pocket yet."
           />
 
           <div className="download">

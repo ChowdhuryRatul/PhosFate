@@ -314,6 +314,7 @@ body.page-phosfate .barwrap{height:100%;display:flex;flex-direction:column;justi
 body.page-phosfate .barwrap > div:last-child{max-width:100%;white-space:nowrap}
 body.page-phosfate .bar{width:100%;max-width:56px;border-radius:10px 10px 0 0;background:#d9d9d9;position:relative}body.page-phosfate .bar.blue{background:linear-gradient(180deg,#273CF5,#7b88ff)}body.page-phosfate .bar.teal{background:linear-gradient(180deg,#73cfc4,#b8e5df)}
 body.page-phosfate .bar span{position:absolute;top:-24px;left:50%;transform:translateX(-50%);font-size:12px;color:#555}
+body.page-phosfate .chart-empty{min-height:132px;border:1px dashed #d7d7d7;border-radius:16px;background:#fafafa;color:#777;font-size:14px;font-weight:800;display:flex;align-items:center;justify-content:center;text-align:center;padding:22px;line-height:1.35}
 body.page-phosfate .download{border-radius:22px;padding:18px;background:white;box-shadow:var(--shadow);margin-top:18px}
 body.page-phosfate .download-row{display:grid;grid-template-columns:minmax(0,1fr) 130px;gap:10px}body.page-phosfate select{border:1px solid #ddd;border-radius:10px;padding:10px 36px 10px 12px;background:white;color:#111;font-size:16px;min-width:0;max-width:100%}body.page-phosfate .gray{background:#aaa;color:white;border:0;border-radius:13px}
 @media(max-width:1200px){
