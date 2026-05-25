@@ -68,6 +68,17 @@ export default function StructureViewer({ label, pdbId, structurePath }) {
   const [status, setStatus] = useState("Preparing 3D viewer...");
   const [error, setError] = useState("");
 
+  function handleZoom(factor) {
+    const viewer = viewerRef.current;
+
+    if (!viewer) {
+      return;
+    }
+
+    viewer.zoom(factor);
+    viewer.render();
+  }
+
   useEffect(() => {
     let cancelled = false;
 
@@ -173,6 +184,28 @@ export default function StructureViewer({ label, pdbId, structurePath }) {
   return (
     <div className="structure-viewer">
       <div className="structure-viewer-root" ref={rootRef} />
+      <div
+        className="structure-viewer-controls"
+        role="group"
+        aria-label="3D viewer zoom controls"
+      >
+        <button
+          type="button"
+          aria-label="Zoom in"
+          title="Zoom in"
+          onClick={() => handleZoom(1.2)}
+        >
+          +
+        </button>
+        <button
+          type="button"
+          aria-label="Zoom out"
+          title="Zoom out"
+          onClick={() => handleZoom(0.8)}
+        >
+          -
+        </button>
+      </div>
       {status ? <div className="structure-viewer-status">{status}</div> : null}
       {error ? (
         <div className="structure-viewer-status structure-viewer-status-error">
