@@ -1,5 +1,6 @@
 import { useMemo, useState } from "react";
 import Header from "../components/Header";
+import { downloadSitesCsv, downloadSitesJson } from "../downloads";
 import { anionFilters } from "../homePageData";
 import {
   AVAILABLE_LIGANDS,
@@ -10,6 +11,7 @@ import {
 export default function AnionPDBPage({ setPage }) {
   const { error, isLoading, manifest, sites } = useBindingSites();
   const [query, setQuery] = useState("");
+  const [downloadType, setDownloadType] = useState("csv");
   const [activeLigands, setActiveLigands] = useState(() =>
     new Set(AVAILABLE_LIGANDS),
   );
@@ -63,6 +65,15 @@ export default function AnionPDBPage({ setPage }) {
   const selectForPhosFate = (site) => {
     storeBindingSite(site);
     setPage("phosfate");
+  };
+
+  const downloadFilteredSites = () => {
+    if (downloadType === "json") {
+      downloadSitesJson(filteredSites, "anionpdb-recovered-sites.json");
+      return;
+    }
+
+    downloadSitesCsv(filteredSites, "anionpdb-recovered-sites.csv");
   };
 
   return (
@@ -232,12 +243,19 @@ export default function AnionPDBPage({ setPage }) {
               <div>Starred (0)</div>
             </div>
             <div className="download-row">
-              <select defaultValue="CSV">
-                <option>CSV</option>
-                <option>PDB files</option>
-                <option>JSON</option>
+              <select
+                onChange={(event) => setDownloadType(event.target.value)}
+                value={downloadType}
+              >
+                <option value="csv">CSV</option>
+                <option value="json">JSON</option>
               </select>
-              <button className="gray" type="button">
+              <button
+                className="gray"
+                disabled={!filteredSites.length}
+                onClick={downloadFilteredSites}
+                type="button"
+              >
                 Download
               </button>
             </div>

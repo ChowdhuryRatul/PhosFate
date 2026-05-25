@@ -2,6 +2,12 @@ import { useMemo, useState } from "react";
 import BarChart from "../components/BarChart";
 import Header from "../components/Header";
 import StructureViewer from "../components/StructureViewer";
+import {
+  downloadFile,
+  downloadSitesCsv,
+  downloadSitesJson,
+  filenameFromPath,
+} from "../downloads";
 import { outputControls } from "../homePageData";
 import { getStoredBindingSite, useBindingSites } from "../useBindingSites";
 
@@ -119,6 +125,7 @@ export default function PhosFatePage({ setPage }) {
   const { manifest, sites } = useBindingSites();
   const [storedSite, setStoredSite] = useState(() => getStoredBindingSite());
   const [queryOverride, setQueryOverride] = useState(null);
+  const [downloadType, setDownloadType] = useState("csv");
 
   const selectedSite = useMemo(
     () => {
@@ -166,6 +173,24 @@ export default function PhosFatePage({ setPage }) {
     () => buildPhosFatePredictionBars(selectedSite),
     [selectedSite],
   );
+  const selectedPdbFile = filenameFromPath(selectedSite?.pdbPath);
+  const downloadSelectedSite = () => {
+    if (!selectedSite) {
+      return;
+    }
+
+    if (downloadType === "json") {
+      downloadSitesJson([selectedSite], selectedSite.id + ".json");
+      return;
+    }
+
+    if (downloadType === "pdb") {
+      downloadFile(selectedSite.pdbPath);
+      return;
+    }
+
+    downloadSitesCsv([selectedSite], selectedSite.id + ".csv");
+  };
 
   return (
     <>
@@ -286,8 +311,8 @@ export default function PhosFatePage({ setPage }) {
                 : "Loading recovered residue indices..."}
               <br />
               {selectedSite
-                ? selectedSite.pdbPath
-                : "data/Distance-5.0/<ligand>/<pdb>/<site>.pdb"}
+                ? selectedPdbFile
+                : "<site>.pdb"}
             </div>
             <StructureViewer
               label={selectedSite?.id}
@@ -337,15 +362,22 @@ export default function PhosFatePage({ setPage }) {
 
           <div className="download">
             <div className="download-row">
-              <select defaultValue="Download report as CSV">
-                <option>Download report as CSV</option>
-                <option>Download JSON</option>
-                <option>{selectedSite?.pdbPath ?? "Download pocket PDB"}</option>
-                <option>
-                  {selectedSite?.residuePath ?? "Download residue indices"}
+              <select
+                onChange={(event) => setDownloadType(event.target.value)}
+                value={downloadType}
+              >
+                <option value="csv">Download report as CSV</option>
+                <option value="json">Download JSON</option>
+                <option value="pdb">
+                  {selectedPdbFile || "Download pocket PDB"}
                 </option>
               </select>
-              <button className="gray" type="button">
+              <button
+                className="gray"
+                disabled={!selectedSite}
+                onClick={downloadSelectedSite}
+                type="button"
+              >
                 Download
               </button>
             </div>
