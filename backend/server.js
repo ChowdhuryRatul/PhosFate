@@ -31,8 +31,7 @@ function safeJoin(baseDir, ...paths) {
 }
 
 function getApiBase(req) {
-  // For production, set this in PM2:
-  // PHOSFATE_API_BASE=https://anionpdb-api.structf.studio
+  PHOSFATE_API_BASE = "https://anionpdb-api.structf.studio";
   if (process.env.PHOSFATE_API_BASE) {
     return process.env.PHOSFATE_API_BASE.replace(/\/$/, "");
   }
@@ -124,7 +123,7 @@ function buildSiteRecord({ req, ligand, pdbId, file }) {
     pdbUrl: `${apiBase}${relativePdbPath}`,
     residueUrl: `${apiBase}${relativeResiduePath}`,
 
-    // relative paths also included just in case
+    // relative paths
     relativePdbPath,
     relativeResiduePath,
 
@@ -216,7 +215,6 @@ app.get("/api/health", (req, res) => {
   });
 });
 
-// Full manifest-style endpoint for your useBindingSites hook
 app.get("/api/binding-sites", (req, res) => {
   try {
     const { ligand, pdbId, chain, site } = req.query;
@@ -261,7 +259,7 @@ app.get("/api/binding-sites", (req, res) => {
   }
 });
 
-// Exact selected-site endpoint
+// selected-site endpoint
 app.get("/api/binding-site", (req, res) => {
   try {
     const { ligand, pdbId, chain, site } = req.query;
@@ -342,7 +340,7 @@ app.get("/api/binding-site", (req, res) => {
   }
 });
 
-// List all sites for one ligand + PDB folder
+// all sites for one ligand + PDB folder
 app.get("/api/binding-sites/:ligand/:pdbId", (req, res) => {
   try {
     const ligand = normalizeLigand(req.params.ligand);
