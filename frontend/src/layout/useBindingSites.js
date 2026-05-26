@@ -75,16 +75,11 @@ import { useEffect, useMemo, useState } from "react";
 
 const SELECTED_SITE_KEY = "phosfate:selected-binding-site";
 
-// Use your Cloudflare Tunnel API hostname
 const API_BASE =
-  import.meta.env.VITE_API_BASE_URL || "https://anionpdb-api.structf.studio";
+  import.meta.env.VITE_PHOSFATE_API_BASE ||
+  "https://anionpdb-api.structf.studio";
 
 export const AVAILABLE_LIGANDS = new Set(["Phosphate", "Chloride", "Nitrate"]);
-
-export function getDataUrl(path) {
-  const cleanPath = path.startsWith("/") ? path.slice(1) : path;
-  return `${API_BASE}/data/${cleanPath}`;
-}
 
 function onlyAvailableLigands(data) {
   const sites = (data.sites ?? []).filter((site) =>
@@ -101,6 +96,18 @@ function onlyAvailableLigands(data) {
   };
 }
 
+function normalizeSite(site) {
+  return {
+    ...site,
+
+    pdbPath: site.pdbPath || site.pdbUrl || "",
+    residuePath: site.residuePath || site.residueUrl || "",
+
+    pdbUrl: site.pdbUrl || site.pdbPath || "",
+    residueUrl: site.residueUrl || site.residuePath || "",
+  };
+}
+
 export function useBindingSites() {
   const [manifest, setManifest] = useState(null);
   const [error, setError] = useState("");
@@ -108,16 +115,22 @@ export function useBindingSites() {
   useEffect(() => {
     let cancelled = false;
 
-    fetch(getDataUrl("binding-sites-manifest.json"))
+    fetch(`${API_BASE}/api/binding-sites`)
       .then((response) => {
         if (!response.ok) {
-          throw new Error("Could not load binding-site manifest");
+          throw new Error("Could not load binding sites from backend");
         }
+
         return response.json();
       })
       .then((data) => {
         if (!cancelled) {
-          setManifest(onlyAvailableLigands(data));
+          const normalizedData = {
+            ...data,
+            sites: (data.sites ?? []).map(normalizeSite),
+          };
+
+          setManifest(onlyAvailableLigands(normalizedData));
         }
       })
       .catch((loadError) => {
@@ -139,6 +152,29 @@ export function useBindingSites() {
     manifest,
     sites,
   };
+}
+
+export async function fetchBindingSite(site) {
+  const params = new URLSearchParams({
+    ligand: site.ligand,
+    pdbId: site.pdbId,
+    chain: site.chain,
+  });
+
+  if (site.site) {
+    params.set("site", site.site);
+  }
+
+  const response = await fetch(`${API_BASE}/api/binding-site?${params}`);
+
+  if (!response.ok) {
+    throw new Error(
+      `Could not fetch ${site.ligand} ${site.pdbId} chain ${site.chain}`,
+    );
+  }
+
+  const data = await response.json();
+  return normalizeSite(data);
 }
 
 export function getStoredBindingSite() {
