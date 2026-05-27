@@ -1,4 +1,9 @@
 export default function Header({ page, setPage }) {
+  const pagePath = {
+    anion: "/home",
+    phosfate: "/PhosFate",
+  };
+
   const goTo = (target) => (event) => {
     event.preventDefault();
     setPage(target);
@@ -7,7 +12,7 @@ export default function Header({ page, setPage }) {
   return (
     <header>
       <div className="brand">
-        <a className="brand-home" href="#anion" onClick={goTo("anion")}>
+        <a className="brand-home" href={pagePath.anion} onClick={goTo("anion")}>
           <h1>AnionPDB</h1>
         </a>
         <span>
@@ -19,19 +24,19 @@ export default function Header({ page, setPage }) {
       <nav>
         <a
           className={page === "anion" ? "pill active" : "pill"}
-          href="#anion"
+          href={pagePath.anion}
           onClick={goTo("anion")}
         >
           AnionPDB pocket search
         </a>
         <a
           className={page === "phosfate" ? "pill active" : "pill"}
-          href="#phosfate"
+          href={pagePath.phosfate}
           onClick={goTo("phosfate")}
         >
           PhosFate pocket scoring
         </a>
-        <a className="pill" href="#guide">
+        <a className="pill" href="/home#guide">
           Guide
         </a>
         <details className="nav-dropdown">
@@ -50,7 +55,7 @@ export default function Header({ page, setPage }) {
             and Ratul Chowdhury* (Under Review)
           </div>
         </details>
-        <a className="link" href="#lab">
+        <a className="link" href="/home#lab">
           ChowdhuryLab
         </a>
       </nav>

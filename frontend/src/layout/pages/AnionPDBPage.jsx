@@ -272,7 +272,7 @@ export default function AnionPDBPage({ setPage }) {
           <div className="tool-grid">
             <a
               className="mini phosfate-action"
-              href="#phosfate"
+              href="/PhosFate"
               onClick={openPhosFate}
             >
               <b>PhosFate</b>
