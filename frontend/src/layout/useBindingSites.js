@@ -7,6 +7,7 @@ export const API_BASE =
   "https://anionpdb-api.structf.studio";
 
 export const AVAILABLE_LIGANDS = new Set([
+  // "Carbonate",
   "Phosphate",
   "Sulfate",
   "Chloride",
