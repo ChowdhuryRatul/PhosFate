@@ -42,8 +42,23 @@ export default function Header({ page, setPage }) {
         <details className="nav-dropdown">
           <summary>FTP access</summary>
           <div className="nav-panel">
-            The complete AnionPDB database download details will be provided
-            after release.
+            <strong>Download AnionPDB PDB files</strong>
+            <ol>
+              <li>
+                Open AnionPDB pocket search and filter by anion type or PDB ID.
+              </li>
+              <li>
+                Use a row Download button to save one binding-site PDB file.
+              </li>
+              <li>
+                Select rows, then use Download Selected to export a ZIP of those
+                PDB files.
+              </li>
+              <li>
+                Leave rows unselected and use Download All to export the current
+                filtered PDB set as a TAR archive.
+              </li>
+            </ol>
           </div>
         </details>
         <details className="nav-dropdown">
