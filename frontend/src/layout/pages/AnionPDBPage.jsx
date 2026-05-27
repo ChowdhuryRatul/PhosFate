@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import Header from "../components/Header";
-import { downloadSitesCsv, downloadSitesJson } from "../downloads";
+import { downloadFile, downloadPdbTar, downloadPdbZip } from "../downloads";
 import { anionFilters } from "../homePageData";
 import {
   AVAILABLE_LIGANDS,
@@ -8,10 +8,16 @@ import {
   useBindingSites,
 } from "../useBindingSites";
 
+const formatCount = (count) => new Intl.NumberFormat("en-US").format(count);
+
 export default function AnionPDBPage({ setPage }) {
   const { error, isLoading, manifest, sites } = useBindingSites();
   const [query, setQuery] = useState("");
-  const [downloadType, setDownloadType] = useState("csv");
+  const [currentPage, setCurrentPage] = useState(0);
+  const [pageSize, setPageSize] = useState(25);
+  const [selectedSiteIds, setSelectedSiteIds] = useState(() => new Set());
+  const [downloadError, setDownloadError] = useState("");
+  const [isPreparingDownload, setIsPreparingDownload] = useState(false);
   const [activeLigands, setActiveLigands] = useState(() =>
     new Set(AVAILABLE_LIGANDS),
   );
@@ -48,7 +54,53 @@ export default function AnionPDBPage({ setPage }) {
     });
   }, [activeLigands, query, sites]);
 
-  const visibleSites = filteredSites.slice(0, 25);
+  const recoveredResultCount = useMemo(() => {
+    const ligands = manifest?.ligands ?? [];
+    return ligands.reduce((total, ligand) => {
+      if (!activeLigands.has(ligand.ligand)) {
+        return total;
+      }
+
+      return total + (ligand.recoveredSiteCount ?? ligand.siteCount ?? 0);
+    }, 0);
+  }, [activeLigands, manifest]);
+  const hasQuery = Boolean(query.trim());
+  const resultCount = hasQuery || !recoveredResultCount
+    ? filteredSites.length
+    : recoveredResultCount;
+  const resultCountLabel = hasQuery
+    ? "indexed binding-site records"
+    : "recovered binding-site records";
+
+  const totalPages = Math.max(1, Math.ceil(filteredSites.length / pageSize));
+  const safeCurrentPage = Math.min(currentPage, totalPages - 1);
+  const visibleSites = filteredSites.slice(
+    safeCurrentPage * pageSize,
+    safeCurrentPage * pageSize + pageSize,
+  );
+  const canGoBack = safeCurrentPage > 0;
+  const canGoForward = safeCurrentPage < totalPages - 1;
+  const selectedSites = useMemo(
+    () => filteredSites.filter((site) => selectedSiteIds.has(site.id)),
+    [filteredSites, selectedSiteIds],
+  );
+  const allVisibleSitesSelected =
+    visibleSites.length > 0 &&
+    visibleSites.every((site) => selectedSiteIds.has(site.id));
+  const filteredPdbPaths = useMemo(
+    () => filteredSites.map((site) => site.pdbPath).filter(Boolean),
+    [filteredSites],
+  );
+
+  const updateQuery = (value) => {
+    setQuery(value);
+    setCurrentPage(0);
+  };
+
+  const updatePageSize = (value) => {
+    setPageSize(Number(value));
+    setCurrentPage(0);
+  };
 
   const toggleLigand = (ligand) => {
     setActiveLigands((currentLigands) => {
@@ -62,18 +114,58 @@ export default function AnionPDBPage({ setPage }) {
     });
   };
 
+  const toggleSelectedSite = (siteId) => {
+    setSelectedSiteIds((currentSiteIds) => {
+      const nextSiteIds = new Set(currentSiteIds);
+
+      if (nextSiteIds.has(siteId)) {
+        nextSiteIds.delete(siteId);
+      } else {
+        nextSiteIds.add(siteId);
+      }
+
+      return nextSiteIds;
+    });
+  };
+
+  const toggleVisibleSites = () => {
+    setSelectedSiteIds((currentSiteIds) => {
+      const nextSiteIds = new Set(currentSiteIds);
+
+      if (allVisibleSitesSelected) {
+        visibleSites.forEach((site) => nextSiteIds.delete(site.id));
+      } else {
+        visibleSites.forEach((site) => nextSiteIds.add(site.id));
+      }
+
+      return nextSiteIds;
+    });
+  };
+
   const selectForPhosFate = (site) => {
     storeBindingSite(site);
     setPage("phosfate");
   };
 
-  const downloadFilteredSites = () => {
-    if (downloadType === "json") {
-      downloadSitesJson(filteredSites, "anionpdb-recovered-sites.json");
+  const downloadSelectedPdbFiles = async () => {
+    if (!selectedSites.length && !filteredPdbPaths.length) {
       return;
     }
 
-    downloadSitesCsv(filteredSites, "anionpdb-recovered-sites.csv");
+    setDownloadError("");
+    setIsPreparingDownload(true);
+
+    try {
+      if (selectedSites.length) {
+        await downloadPdbZip(selectedSites, "anionpdb-selected-pdb-files.zip");
+      } else {
+        await downloadPdbTar(filteredPdbPaths, "anionpdb-filtered-pdb-files.tar");
+      }
+    } catch (downloadError) {
+      setDownloadError(downloadError.message);
+    } finally {
+      setIsPreparingDownload(false);
+    }
   };
 
   return (
@@ -100,7 +192,7 @@ export default function AnionPDBPage({ setPage }) {
               <input
                 id="anion-pdb-entry"
                 list="anion-pdb-options"
-                onChange={(event) => setQuery(event.target.value)}
+                onChange={(event) => updateQuery(event.target.value)}
                 placeholder="Search or type a PDB entry"
                 value={query}
               />
@@ -110,17 +202,21 @@ export default function AnionPDBPage({ setPage }) {
                 ))}
               </datalist>
               <div className="buttons">
-                <button type="button" onClick={() => setQuery("2G25")}>
+                <button type="button" onClick={() => updateQuery("2G25")}>
                   Search example
                 </button>
-                <button type="button" onClick={() => setQuery("")}>
+                <button type="button" onClick={() => updateQuery("")}>
                   Clear
                 </button>
               </div>
             </div>
           </div>
 
-          <button className="primary" type="button" onClick={() => setQuery("")}>
+          <button
+            className="primary"
+            type="button"
+            onClick={() => updateQuery("")}
+          >
             Browse recovered sites
           </button>
 
@@ -133,17 +229,14 @@ export default function AnionPDBPage({ setPage }) {
                 <label className="check" key={filter}>
                   <input
                     checked={
-                      !filter.includes("Carbonate") &&
-                      !filter.includes("High-confidence") &&
                       AVAILABLE_LIGANDS.has(filter.split(" ")[0]) &&
                       activeLigands.has(filter.split(" ")[0])
                     }
-                    disabled={
-                      filter.includes("Carbonate") ||
-                      filter.includes("High-confidence") ||
-                      !AVAILABLE_LIGANDS.has(filter.split(" ")[0])
-                    }
-                    onChange={() => toggleLigand(filter.split(" ")[0])}
+                    disabled={!AVAILABLE_LIGANDS.has(filter.split(" ")[0])}
+                    onChange={() => {
+                      toggleLigand(filter.split(" ")[0]);
+                      setCurrentPage(0);
+                    }}
                     type="checkbox"
                   />{" "}
                   {filter}
@@ -160,11 +253,34 @@ export default function AnionPDBPage({ setPage }) {
               {(manifest?.ligands ?? []).map((ligand) => (
                 <div className="summary-item" key={ligand.ligand}>
                   <span>{ligand.ligand}</span>
-                  <strong>{ligand.siteCount}</strong>
-                  <small>{ligand.projectCount} PDB folders</small>
+                  <strong>
+                    {formatCount(ligand.recoveredSiteCount ?? ligand.siteCount)}
+                  </strong>
+                  <small>
+                    PDB files across{" "}
+                    {formatCount(
+                      ligand.recoveredProjectCount ?? ligand.projectCount,
+                    )}{" "}
+                    folders
+                  </small>
+                  <small>{formatCount(ligand.siteCount)} indexed records</small>
                 </div>
               ))}
             </div>
+          </div>
+
+          <div className="tool-grid">
+            <a
+              className="mini phosfate-action"
+              href="#phosfate"
+              onClick={openPhosFate}
+            >
+              <b>PhosFate</b>
+              <span>
+                PhosFate predicted re-annotations of anion binding probability
+                in AnionPDB.
+              </span>
+            </a>
           </div>
         </section>
 
@@ -185,18 +301,33 @@ export default function AnionPDBPage({ setPage }) {
               <strong>
                 {isLoading
                   ? "Loading recovered binding sites"
-                  : filteredSites.length + " recovered binding-site records"}
+                  : formatCount(resultCount) + " " + resultCountLabel}
               </strong>
               <div className="result-controls">
                 <div className="per">PER PAGE</div>
-                <select defaultValue="25">
-                  <option>25</option>
-                  <option>50</option>
-                  <option>100</option>
+                <select
+                  onChange={(event) => updatePageSize(event.target.value)}
+                  value={String(pageSize)}
+                >
+                  <option value="25">25</option>
+                  <option value="50">50</option>
+                  <option value="100">100</option>
                 </select>
                 <span className="arrows">
-                  <button type="button">←</button>
-                  <button type="button">→</button>
+                  <button
+                    disabled={!canGoBack}
+                    onClick={() => setCurrentPage(safeCurrentPage - 1)}
+                    type="button"
+                  >
+                    ←
+                  </button>
+                  <button
+                    disabled={!canGoForward}
+                    onClick={() => setCurrentPage(safeCurrentPage + 1)}
+                    type="button"
+                  >
+                    →
+                  </button>
                 </span>
               </div>
             </div>
@@ -205,7 +336,17 @@ export default function AnionPDBPage({ setPage }) {
               <div>ID</div>
               <div>POCKET RECORD</div>
               <div>ANION LAYERS</div>
-              <div>SAVE</div>
+              <div>DOWNLOAD</div>
+              <div>USE</div>
+              <label className="select-all">
+                <span>SELECT</span>
+                <input
+                  checked={allVisibleSitesSelected}
+                  disabled={!visibleSites.length}
+                  onChange={toggleVisibleSites}
+                  type="checkbox"
+                />
+              </label>
             </div>
 
             {error ? (
@@ -215,11 +356,9 @@ export default function AnionPDBPage({ setPage }) {
             ) : (
               <div className="site-list">
                 {visibleSites.map((site) => (
-                  <button
+                  <div
                     className="site-row"
                     key={site.id}
-                    onClick={() => selectForPhosFate(site)}
-                    type="button"
                   >
                     <span>{site.pdbId}</span>
                     <span>
@@ -230,50 +369,63 @@ export default function AnionPDBPage({ setPage }) {
                       </small>
                     </span>
                     <span>{site.ligand}</span>
-                    <span>Use</span>
-                  </button>
+                    <button
+                      className="row-link"
+                      onClick={() => downloadFile(site.pdbPath)}
+                      type="button"
+                    >
+                      Download
+                    </button>
+                    <button
+                      className="row-link"
+                      onClick={() => selectForPhosFate(site)}
+                      type="button"
+                    >
+                      Use
+                    </button>
+                    <label className="row-check" aria-label={"Select " + site.id}>
+                      <input
+                        checked={selectedSiteIds.has(site.id)}
+                        onChange={() => toggleSelectedSite(site.id)}
+                        type="checkbox"
+                      />
+                    </label>
+                  </div>
                 ))}
               </div>
             )}
           </div>
 
-          <div className="download">
-            <div className="seg">
-              <div className="on">Viewable</div>
-              <div>Starred (0)</div>
-            </div>
-            <div className="download-row">
-              <select
-                onChange={(event) => setDownloadType(event.target.value)}
-                value={downloadType}
-              >
-                <option value="csv">CSV</option>
-                <option value="json">JSON</option>
-              </select>
-              <button
-                className="gray"
-                disabled={!filteredSites.length}
-                onClick={downloadFilteredSites}
-                type="button"
-              >
-                Download
-              </button>
-            </div>
+          <div className="download bulk-download">
+            <button
+              className="bulk-download-button"
+              disabled={
+                isPreparingDownload ||
+                (!selectedSites.length && !filteredPdbPaths.length)
+              }
+              onClick={downloadSelectedPdbFiles}
+              type="button"
+            >
+              {isPreparingDownload
+                ? "Preparing download"
+                : selectedSites.length
+                  ? "Download Selected"
+                  : "Download All"}
+            </button>
+            {selectedSites.length ? (
+              <p className="bulk-download-count">
+                {formatCount(selectedSites.length)} selected
+              </p>
+            ) : filteredPdbPaths.length ? (
+              <p className="bulk-download-count">
+                {formatCount(filteredPdbPaths.length)} filtered PDB files
+              </p>
+            ) : null}
+            {downloadError ? (
+              <p className="download-error">{downloadError}</p>
+            ) : null}
           </div>
 
-          <div className="tool-grid">
-            <a
-              className="mini phosfate-action"
-              href="#phosfate"
-              onClick={openPhosFate}
-            >
-              <b>PhosFate</b>
-              <span>
-                PhosFate predicted re-annotations of anion binding probability
-                in AnionPDB.
-              </span>
-            </a>
-          </div>
         </section>
       </main>
     </>

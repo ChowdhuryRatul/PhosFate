@@ -3,10 +3,16 @@ import "../PhosFate.css";
 import AnionPDBPage from "./pages/AnionPDBPage";
 import PhosFatePage from "./pages/PhosFatePage";
 
+const getPageFromHash = () => {
+  if (window.location.hash === "#phosfate") {
+    return "phosfate";
+  }
+
+  return "anion";
+};
+
 export default function HomePage() {
-  const [page, setPage] = useState(() =>
-    window.location.hash === "#phosfate" ? "phosfate" : "anion",
-  );
+  const [page, setPage] = useState(getPageFromHash);
 
   useEffect(() => {
     document.body.classList.toggle("page-anion", page === "anion");
@@ -20,7 +26,7 @@ export default function HomePage() {
 
   useEffect(() => {
     const handleHashChange = () => {
-      setPage(window.location.hash === "#phosfate" ? "phosfate" : "anion");
+      setPage(getPageFromHash());
     };
 
     window.addEventListener("hashchange", handleHashChange);

@@ -1,104 +1,50 @@
-// import { useEffect, useMemo, useState } from "react";
-
-// const SELECTED_SITE_KEY = "phosfate:selected-binding-site";
-// export const AVAILABLE_LIGANDS = new Set(["Phosphate", "Chloride", "Nitrate"]);
-
-// function onlyAvailableLigands(data) {
-//   const sites = (data.sites ?? []).filter((site) =>
-//     AVAILABLE_LIGANDS.has(site.ligand),
-//   );
-
-//   return {
-//     ...data,
-//     ligands: (data.ligands ?? []).filter((ligand) =>
-//       AVAILABLE_LIGANDS.has(ligand.ligand),
-//     ),
-//     sites,
-//     totalSites: sites.length,
-//   };
-// }
-
-// export function useBindingSites() {
-//   const [manifest, setManifest] = useState(null);
-//   const [error, setError] = useState("");
-
-//   useEffect(() => {
-//     let cancelled = false;
-
-//     fetch("/data/binding-sites-manifest.json")
-//       .then((response) => {
-//         if (!response.ok) {
-//           throw new Error("Could not load binding-site manifest");
-//         }
-//         return response.json();
-//       })
-//       .then((data) => {
-//         if (!cancelled) {
-//           setManifest(onlyAvailableLigands(data));
-//         }
-//       })
-//       .catch((loadError) => {
-//         if (!cancelled) {
-//           setError(loadError.message);
-//         }
-//       });
-
-//     return () => {
-//       cancelled = true;
-//     };
-//   }, []);
-
-//   const sites = useMemo(() => manifest?.sites ?? [], [manifest]);
-
-//   return {
-//     error,
-//     isLoading: !manifest && !error,
-//     manifest,
-//     sites,
-//   };
-// }
-
-// export function getStoredBindingSite() {
-//   try {
-//     const rawSite = window.sessionStorage.getItem(SELECTED_SITE_KEY);
-//     return rawSite ? JSON.parse(rawSite) : null;
-//   } catch {
-//     return null;
-//   }
-// }
-
-// export function storeBindingSite(site) {
-//   window.sessionStorage.setItem(SELECTED_SITE_KEY, JSON.stringify(site));
-// }
-
 import { useEffect, useMemo, useState } from "react";
 
 const SELECTED_SITE_KEY = "phosfate:selected-binding-site";
 
-const API_BASE =
+export const API_BASE =
   import.meta.env.VITE_PHOSFATE_API_BASE ||
   "https://anionpdb-api.structf.studio";
 
-export const AVAILABLE_LIGANDS = new Set(["Phosphate", "Chloride", "Nitrate"]);
+export const AVAILABLE_LIGANDS = new Set([
+  "Phosphate",
+  "Sulfate",
+  "Chloride",
+  "Nitrate",
+]);
+// TODO: remove this note once the hosted API includes Sulfate data. The local
+// backend reference supports Sulfate, but the current hosted API may not return it.
+
+function normalizeLigandSummary(ligand) {
+  return {
+    ...ligand,
+    recoveredSiteCount: ligand.recoveredSiteCount ?? ligand.siteCount ?? 0,
+    recoveredProjectCount:
+      ligand.recoveredProjectCount ?? ligand.projectCount ?? 0,
+  };
+}
 
 function onlyAvailableLigands(data) {
-  const sites = (data.sites ?? []).filter((site) =>
-    AVAILABLE_LIGANDS.has(site.ligand),
-  );
+  const sites = (data.sites ?? [])
+    .map(normalizeSite)
+    .filter((site) => AVAILABLE_LIGANDS.has(site.ligand));
+
+  const ligands = (data.ligands ?? [])
+    .filter((ligand) => AVAILABLE_LIGANDS.has(ligand.ligand))
+    .map(normalizeLigandSummary);
 
   return {
     ...data,
-    ligands: (data.ligands ?? []).filter((ligand) =>
-      AVAILABLE_LIGANDS.has(ligand.ligand),
-    ),
+    ligands,
     sites,
-    totalSites: sites.length,
+    totalSites: data.totalSites ?? sites.length,
   };
 }
 
 function normalizeSite(site) {
   return {
     ...site,
+    residueIndices: site.residueIndices ?? [],
 
     pdbPath: site.pdbPath || site.pdbUrl || "",
     residuePath: site.residuePath || site.residueUrl || "",
@@ -125,12 +71,7 @@ export function useBindingSites() {
       })
       .then((data) => {
         if (!cancelled) {
-          const normalizedData = {
-            ...data,
-            sites: (data.sites ?? []).map(normalizeSite),
-          };
-
-          setManifest(onlyAvailableLigands(normalizedData));
+          setManifest(onlyAvailableLigands(data));
         }
       })
       .catch((loadError) => {

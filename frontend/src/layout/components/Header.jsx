@@ -7,11 +7,13 @@ export default function Header({ page, setPage }) {
   return (
     <header>
       <div className="brand">
-        <h1>AnionPDB</h1>
+        <a className="brand-home" href="#anion" onClick={goTo("anion")}>
+          <h1>AnionPDB</h1>
+        </a>
         <span>
-          {page === "anion"
-            ? "Anion-binding pocket AI workbench within StructF.studio"
-            : "PhosFate phosphate-selectivity re-annotation within StructF.studio"}
+          {page === "phosfate"
+            ? "PhosFate phosphate-selectivity re-annotation within StructF.studio"
+            : "Anion-binding pocket AI workbench within StructF.studio"}
         </span>
       </div>
       <nav>
@@ -20,34 +22,37 @@ export default function Header({ page, setPage }) {
           href="#anion"
           onClick={goTo("anion")}
         >
-          AnionPDB
-        </a>
-        <a className="pill" href="#pocket-search">
-          Pocket Search
+          AnionPDB pocket search
         </a>
         <a
           className={page === "phosfate" ? "pill active" : "pill"}
           href="#phosfate"
           onClick={goTo("phosfate")}
         >
-          PhosFate
-        </a>
-        <a className="pill" href="#anion-interaction">
-          Anion-Interaction
-        </a>
-        <a className="pill" href="#job-trace">
-          Job Trace
+          PhosFate pocket scoring
         </a>
         <a className="pill" href="#guide">
           Guide
         </a>
-        <a className="link" href="#paper">
-          Paper
-        </a>
+        <details className="nav-dropdown">
+          <summary>FTP access</summary>
+          <div className="nav-panel">
+            The complete AnionPDB database download details will be provided
+            after release.
+          </div>
+        </details>
+        <details className="nav-dropdown">
+          <summary>Cite AnionPDB</summary>
+          <div className="nav-panel">
+            Re-annotation of Anion-Binding Pockets using Binding Probability
+            Distributions in AnionPDB. Arunraj B., Priyanshu Gupta, Riza
+            Danurdoro, Curwen Pei Hong Tan, Narayana R. Aluru, Manish Kumar,
+            and Ratul Chowdhury* (Under Review)
+          </div>
+        </details>
         <a className="link" href="#lab">
           ChowdhuryLab
         </a>
-        <span className="clear">Clear session</span>
       </nav>
     </header>
   );

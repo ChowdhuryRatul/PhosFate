@@ -10,7 +10,7 @@ const PORT = process.env.PORT || 3000;
 const DATA_DIR = path.join(__dirname, "data");
 const DISTANCE_DIR = path.join(DATA_DIR, "Distance-5.0");
 
-const ALLOWED_LIGANDS = ["Chloride", "Nitrate", "Phosphate"];
+const ALLOWED_LIGANDS = ["Chloride", "Nitrate", "Phosphate", "Sulfate"];
 
 app.use(cors());
 app.use(express.json());
@@ -31,7 +31,6 @@ function safeJoin(baseDir, ...paths) {
 }
 
 function getApiBase(req) {
-  PHOSFATE_API_BASE = "https://anionpdb-api.structf.studio";
   if (process.env.PHOSFATE_API_BASE) {
     return process.env.PHOSFATE_API_BASE.replace(/\/$/, "");
   }
@@ -47,6 +46,7 @@ function normalizeLigand(ligand) {
   if (value === "chloride" || value === "cl") return "Chloride";
   if (value === "nitrate" || value === "no3") return "Nitrate";
   if (value === "phosphate" || value === "po4") return "Phosphate";
+  if (value === "sulfate" || value === "so4") return "Sulfate";
 
   return ligand;
 }

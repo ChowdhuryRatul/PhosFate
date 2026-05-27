@@ -1,0 +1,23 @@
+.DS_Store
+*.local
+.env
+.env.*
+!.env.example
+
+# Local/editor/runtime noise
+.Rhistory
+.RData
+.Ruserdata
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ipynb_checkpoints/
+node_modules/
+
+# Recovered binding-site data is served by the workstation/API, not committed
+# into the frontend bundle.
+frontend/public/data/
+backend/data/
+
+# Local backups created during repository maintenance.
+backups/

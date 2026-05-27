@@ -3,8 +3,6 @@ export const anionFilters = [
   "Sulfate SO₄²⁻",
   "Chloride Cl⁻",
   "Nitrate NO₃⁻",
-  "Carbonate CO₃²⁻",
-  "High-confidence direct pocket",
 ];
 
 export const outputControls = [
