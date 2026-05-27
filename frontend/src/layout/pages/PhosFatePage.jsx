@@ -127,21 +127,18 @@ export default function PhosFatePage({ setPage }) {
   const [queryOverride, setQueryOverride] = useState(null);
   const [downloadType, setDownloadType] = useState("csv");
 
-  const selectedSite = useMemo(
-    () => {
-      const hydratedStoredSite =
-        storedSite && sites.find((site) => site.id === storedSite.id);
+  const selectedSite = useMemo(() => {
+    const hydratedStoredSite =
+      storedSite && sites.find((site) => site.id === storedSite.id);
 
-      return (
-        hydratedStoredSite ??
-        storedSite ??
-        sites.find((site) => site.ligand === "Phosphate") ??
-        sites[0] ??
-        null
-      );
-    },
-    [sites, storedSite],
-  );
+    return (
+      hydratedStoredSite ??
+      storedSite ??
+      sites.find((site) => site.ligand === "Phosphate") ??
+      sites[0] ??
+      null
+    );
+  }, [sites, storedSite]);
 
   const query = useMemo(() => {
     if (queryOverride !== null) {
@@ -162,7 +159,8 @@ export default function PhosFatePage({ setPage }) {
   }, [queryOverride, selectedSite]);
 
   const ligandSummary = useMemo(
-    () => manifest?.ligands?.find((item) => item.ligand === selectedSite?.ligand),
+    () =>
+      manifest?.ligands?.find((item) => item.ligand === selectedSite?.ligand),
     [manifest, selectedSite],
   );
   const pdbAnnotationBars = useMemo(
@@ -214,8 +212,8 @@ export default function PhosFatePage({ setPage }) {
               <div>
                 <h3>Search or upload a pocket</h3>
                 <p>
-                  Example: 1TQN chain A pocket around PO₄³⁻. The query loads
-                  the interactive 3D structure and predicted anion preference
+                  Example: 1TQN chain A pocket around PO₄³⁻. The query loads the
+                  interactive 3D structure and predicted anion preference
                   distribution.
                 </p>
               </div>
@@ -310,9 +308,7 @@ export default function PhosFatePage({ setPage }) {
                   selectedSite.residueIndices.slice(0, 28).join(", ")
                 : "Loading recovered residue indices..."}
               <br />
-              {selectedSite
-                ? selectedPdbFile
-                : "<site>.pdb"}
+              {selectedSite ? selectedPdbFile : "<site>.pdb"}
             </div>
             <StructureViewer
               label={selectedSite?.id}

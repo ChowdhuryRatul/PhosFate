@@ -13,21 +13,126 @@ function resolveStructureUrl(path) {
   return new URL(normalizedPath, window.location.origin).href;
 }
 
+// Label anion
+const ANION_RESNAMES = new Set([
+  "PO4",
+  "SO4",
+  "NO3",
+  "CO3",
+  "CL",
+  "CLA",
+  "PHO",
+  "SUL",
+  "NIT",
+  "CAR",
+]);
+
+function distance(a, b) {
+  const dx = a.x - b.x;
+  const dy = a.y - b.y;
+  const dz = a.z - b.z;
+  return Math.sqrt(dx * dx + dy * dy + dz * dz);
+}
+
+function averagePosition(atoms) {
+  const total = atoms.reduce(
+    (sum, atom) => ({
+      x: sum.x + atom.x,
+      y: sum.y + atom.y,
+      z: sum.z + atom.z,
+    }),
+    { x: 0, y: 0, z: 0 },
+  );
+
+  return {
+    x: total.x / atoms.length,
+    y: total.y / atoms.length,
+    z: total.z / atoms.length,
+  };
+}
+
+function getResidueKey(atom) {
+  return `${atom.chain ?? ""}:${atom.resn}:${atom.resi}`;
+}
+
+function addPocketLabels(viewer) {
+  const model = viewer.getModel();
+  if (!model) return;
+
+  const atoms = model.selectedAtoms({});
+
+  const residues = new Map();
+  const anions = new Map();
+
+  atoms.forEach((atom) => {
+    const resn = String(atom.resn ?? "").trim();
+    const resi = atom.resi;
+    const chain = atom.chain ?? "";
+
+    if (!resn || resi == null) return;
+
+    const key = `${chain}:${resn}:${resi}`;
+
+    if (atom.hetflag) {
+      if (!anions.has(key)) anions.set(key, []);
+      anions.get(key).push(atom);
+    } else {
+      if (!residues.has(key)) residues.set(key, []);
+      residues.get(key).push(atom);
+    }
+  });
+
+  anions.forEach((anionAtoms) => {
+    const atom = anionAtoms[0];
+    const center = averagePosition(anionAtoms);
+
+    viewer.addLabel(atom.resn, {
+      position: center,
+      fontSize: 14,
+      fontColor: "black",
+      backgroundColor: "yellow",
+      backgroundOpacity: 0.85,
+      inFront: true,
+    });
+  });
+
+  residues.forEach((residueAtoms) => {
+    const atom = residueAtoms[0];
+    const center = averagePosition(residueAtoms);
+
+    viewer.addLabel(`${atom.resn} ${atom.resi}`, {
+      position: center,
+      fontSize: 11,
+      fontColor: "black",
+      backgroundColor: "white",
+      backgroundOpacity: 0.75,
+      inFront: true,
+    });
+  });
+
+  viewer.render();
+}
+//
 function isPdbText(text) {
-  return text.split("\n").some((line) => (
-    line.startsWith("ATOM") ||
-    line.startsWith("HETATM") ||
-    line.startsWith("HEADER") ||
-    line.startsWith("TITLE") ||
-    line.startsWith("MODEL") ||
-    line.startsWith("COMPND") ||
-    line.startsWith("REMARK")
-  ));
+  return text
+    .split("\n")
+    .some(
+      (line) =>
+        line.startsWith("ATOM") ||
+        line.startsWith("HETATM") ||
+        line.startsWith("HEADER") ||
+        line.startsWith("TITLE") ||
+        line.startsWith("MODEL") ||
+        line.startsWith("COMPND") ||
+        line.startsWith("REMARK"),
+    );
 }
 
 async function readPdbResponse(response, sourceLabel) {
   if (!response?.ok) {
-    throw new Error(sourceLabel + " returned HTTP " + (response?.status ?? "0"));
+    throw new Error(
+      sourceLabel + " returned HTTP " + (response?.status ?? "0"),
+    );
   }
 
   const contentType = response.headers.get("content-type") ?? "";
@@ -148,7 +253,9 @@ export default function StructureViewer({ label, pdbId, structurePath }) {
 
         if (!pdbText && pdbId) {
           setStatus(
-            "Pocket file unavailable locally. Loading " + pdbId + " from RCSB...",
+            "Pocket file unavailable locally. Loading " +
+              pdbId +
+              " from RCSB...",
           );
           const rcsbResponse = await fetch(
             "https://files.rcsb.org/download/" + pdbId + ".pdb",
@@ -164,6 +271,8 @@ export default function StructureViewer({ label, pdbId, structurePath }) {
 
         if (!cancelled) {
           applyDefaultStyle(viewer);
+          addPocketLabels(viewer);
+          viewer.render();
           setStatus("");
         }
       } catch (loadError) {
