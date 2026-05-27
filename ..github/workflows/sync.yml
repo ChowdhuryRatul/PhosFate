@@ -17,7 +17,7 @@ jobs:
       - name: Push to Hugging Face Hub
         env:
           # This pulls your real hf_... token securely from GitHub Secrets
-          HF_TOKEN: ${{ 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 }}
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
         run: |
           # 1. Fetch all LFS pointers to make sure large dataset files migrate fully
           git lfs fetch --all
