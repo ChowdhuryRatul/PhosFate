@@ -8,7 +8,7 @@ export default function BarChart({ title, subtitle, bars, emptyMessage }) {
         <span className="score">{subtitle}</span>
       </div>
       {hasBars ? (
-        <div className="chart">
+        <div className="chart" style={{ marginTop: "32px" }}>
           <div className="yaxis">
             <span>1.0</span>
             <span>0.75</span>
