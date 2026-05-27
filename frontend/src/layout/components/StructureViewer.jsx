@@ -72,7 +72,7 @@ function getResidueKey(atom) {
   return `${atom.chain ?? ""}:${atom.resn}:${atom.resi}`;
 }
 
-function addPocketLabels(viewer) {
+function addPocketLabels(viewer, showResidueLabels = false) {
   const model = viewer.getModel();
   if (!model) return;
 
@@ -113,19 +113,21 @@ function addPocketLabels(viewer) {
     });
   });
 
-  residues.forEach((residueAtoms) => {
-    const atom = residueAtoms[0];
-    const center = averagePosition(residueAtoms);
+  if (showResidueLabels) {
+    residues.forEach((residueAtoms) => {
+      const atom = residueAtoms[0];
+      const center = averagePosition(residueAtoms);
 
-    viewer.addLabel(`${atom.resn} ${atom.resi}`, {
-      position: center,
-      fontSize: 11,
-      fontColor: "black",
-      backgroundColor: "white",
-      backgroundOpacity: 0.75,
-      inFront: true,
+      viewer.addLabel(`${atom.resn} ${atom.resi}`, {
+        position: center,
+        fontSize: 11,
+        fontColor: "black",
+        backgroundColor: "white",
+        backgroundOpacity: 0.75,
+        inFront: true,
+      });
     });
-  });
+  }
 
   viewer.render();
 }
@@ -183,7 +185,12 @@ function applyDefaultStyle(viewer) {
   viewer.render();
 }
 
-export default function StructureViewer({ label, pdbId, structurePath }) {
+export default function StructureViewer({
+  label,
+  pdbId,
+  structurePath,
+  showResidueLabels = false,
+}) {
   const rootRef = useRef(null);
   const viewerRef = useRef(null);
   const [isReady, setIsReady] = useState(false);
@@ -288,7 +295,7 @@ export default function StructureViewer({ label, pdbId, structurePath }) {
 
         if (!cancelled) {
           applyDefaultStyle(viewer);
-          addPocketLabels(viewer);
+          addPocketLabels(viewer, showResidueLabels);
           viewer.render();
           setStatus("");
         }
@@ -305,7 +312,7 @@ export default function StructureViewer({ label, pdbId, structurePath }) {
     return () => {
       cancelled = true;
     };
-  }, [isReady, label, pdbId, structurePath]);
+  }, [isReady, label, pdbId, structurePath, showResidueLabels]);
 
   return (
     <div className="structure-viewer">

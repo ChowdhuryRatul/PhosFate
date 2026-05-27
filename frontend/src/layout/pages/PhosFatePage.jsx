@@ -8,7 +8,7 @@ import {
   downloadSitesJson,
   filenameFromPath,
 } from "../downloads";
-import { outputControls } from "../homePageData";
+// import { outputControls } from "../homePageData";
 import { getStoredBindingSite, useBindingSites } from "../useBindingSites";
 
 const anionLabels = [
@@ -17,6 +17,13 @@ const anionLabels = [
   { ligand: "Chloride", label: "Cl", variant: "blue" },
   { ligand: "Nitrate", label: "NO3", variant: "blue" },
   { ligand: "Carbonate", label: "CO3", variant: "blue" },
+];
+
+const outputControls = [
+  { key: "viewer", label: "Show 3D viewer" },
+  { key: "pdbAnnotation", label: "Show PDB annotation" },
+  { key: "phosfate", label: "Show PhosFate re-annotation" },
+  { key: "firstShell", label: "Show first-shell residues" },
 ];
 
 function toBarValue(value) {
@@ -144,6 +151,12 @@ export default function PhosFatePage({ setPage }) {
   const [storedSite, setStoredSite] = useState(() => getStoredBindingSite());
   const [queryOverride, setQueryOverride] = useState(null);
   const [downloadType, setDownloadType] = useState("csv");
+  const [visibleOutputs, setVisibleOutputs] = useState({
+    viewer: true,
+    pdbAnnotation: true,
+    phosfate: true,
+    firstShell: false,
+  });
 
   const selectedSite = useMemo(() => {
     const hydratedStoredSite =
@@ -288,9 +301,19 @@ export default function PhosFatePage({ setPage }) {
               <span className="dot" /> Output controls
             </p>
             <div className="filters">
-              {outputControls.map((control, index) => (
-                <label className="check" key={control}>
-                  <input type="checkbox" defaultChecked={index < 3} /> {control}
+              {outputControls.map((control) => (
+                <label className="check" key={control.key}>
+                  <input
+                    type="checkbox"
+                    checked={visibleOutputs[control.key]}
+                    onChange={(event) => {
+                      setVisibleOutputs((previous) => ({
+                        ...previous,
+                        [control.key]: event.target.checked,
+                      }));
+                    }}
+                  />{" "}
+                  {control.label}
                 </label>
               ))}
             </div>
@@ -321,20 +344,40 @@ export default function PhosFatePage({ setPage }) {
               <div>Chain {selectedSite?.chain ?? "..."}</div>
             </div>
             <div className="seq">
-              {selectedSite
-                ? "Residue indices: " +
-                  selectedSite.residueIndices.slice(0, 28).join(", ")
-                : "Loading recovered residue indices..."}
+              {selectedSite ? (
+                <>
+                  Residue indices:{" "}
+                  {Array.isArray(selectedSite.residueIndices) &&
+                  selectedSite.residueIndices.length > 0
+                    ? selectedSite.residueIndices
+                        .slice(
+                          0,
+                          visibleOutputs.firstShell
+                            ? selectedSite.residueIndices.length
+                            : 6,
+                        )
+                        .join(", ")
+                    : "No residue index data"}
+                </>
+              ) : (
+                "Loading recovered residue indices..."
+              )}
+
               <br />
+
               {selectedSite
                 ? formatPocketDisplayName(selectedPdbFile)
                 : "<site>.pdb"}
+              <br />
             </div>
-            <StructureViewer
-              label={selectedSite?.id}
-              pdbId={selectedSite?.pdbId}
-              structurePath={selectedSite?.pdbPath}
-            />
+            {visibleOutputs.viewer ? (
+              <StructureViewer
+                label={selectedSite?.id}
+                pdbId={selectedSite?.pdbId}
+                structurePath={selectedSite?.pdbPath}
+                showResidueLabels={visibleOutputs.firstShell}
+              />
+            ) : null}
           </div>
 
           {selectedSite ? (
@@ -368,17 +411,22 @@ export default function PhosFatePage({ setPage }) {
             </div>
           ) : null}
 
-          <BarChart
-            title="PDB annotation"
-            subtitle="crystallographic ligand label"
-            bars={pdbAnnotationBars}
-          />
-          <BarChart
-            title="PhosFate re-annotation"
-            subtitle="predicted binding probability distribution"
-            bars={phosFatePredictionBars}
-            emptyMessage="No PhosFate score table is present for this pocket yet."
-          />
+          {visibleOutputs.pdbAnnotation ? (
+            <BarChart
+              title="PDB annotation"
+              subtitle="crystallographic ligand label"
+              bars={pdbAnnotationBars}
+            />
+          ) : null}
+
+          {visibleOutputs.phosfate ? (
+            <BarChart
+              title="PhosFate re-annotation"
+              subtitle="predicted binding probability distribution"
+              bars={phosFatePredictionBars}
+              emptyMessage="No PhosFate score table is present for this pocket yet."
+            />
+          ) : null}
 
           <div className="download">
             <div className="download-row">
