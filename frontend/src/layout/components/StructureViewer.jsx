@@ -1,5 +1,22 @@
 import { useEffect, useRef, useState } from "react";
 
+function formatPocketDisplayName(value) {
+  const filename = String(value ?? "")
+    .split("/")
+    .pop();
+
+  const match = filename.match(
+    /^([A-Za-z0-9]+)_chain-([A-Za-z0-0]+)_site-([0-9]+)\.pdb$/i,
+  );
+
+  if (!match) {
+    return filename.replace(/\.pdbs$/i, "");
+  }
+  const [, pdbId, chain, site] = match;
+
+  return `${pdbId.toUpperCase()}_Chain-${chain.toUpperCase()} (Site: ${site})`;
+}
+
 function resolveStructureUrl(path) {
   if (!path) {
     return "";

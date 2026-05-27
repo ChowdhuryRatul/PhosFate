@@ -121,6 +121,24 @@ function buildPhosFatePredictionBars(site) {
   return buildBarsFromScores(scoreMap, "teal");
 }
 
+function formatPocketDisplayName(value) {
+  const filename = String(value ?? "")
+    .split("/")
+    .pop();
+
+  const match = filename.match(
+    /^([A-Za-z0-9]+)_chain-([A-Za-z0-9]+)_site-([0-9]+)\.pdb$/i,
+  );
+
+  if (!match) {
+    return filename.replace(/\.pdb$/i, "");
+  }
+
+  const [, pdbId, chain, site] = match;
+
+  return `${pdbId.toUpperCase()}_Chain-${chain.toUpperCase()} (Site: ${site})`;
+}
+
 export default function PhosFatePage({ setPage }) {
   const { manifest, sites } = useBindingSites();
   const [storedSite, setStoredSite] = useState(() => getStoredBindingSite());
@@ -308,7 +326,9 @@ export default function PhosFatePage({ setPage }) {
                   selectedSite.residueIndices.slice(0, 28).join(", ")
                 : "Loading recovered residue indices..."}
               <br />
-              {selectedSite ? selectedPdbFile : "<site>.pdb"}
+              {selectedSite
+                ? formatPocketDisplayName(selectedPdbFile)
+                : "<site>.pdb"}
             </div>
             <StructureViewer
               label={selectedSite?.id}
@@ -321,7 +341,11 @@ export default function PhosFatePage({ setPage }) {
             <div className="site-detail-card">
               <div>
                 <span>Selected recovered pocket</span>
-                <strong>{selectedSite.id}</strong>
+                <strong>
+                  {selectedSite
+                    ? formatPocketDisplayName(selectedPdbFile)
+                    : "<site>.pdb"}
+                </strong>
               </div>
               <dl>
                 <div>

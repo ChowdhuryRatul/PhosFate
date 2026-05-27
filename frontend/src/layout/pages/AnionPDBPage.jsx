@@ -10,6 +10,24 @@ import {
 
 const formatCount = (count) => new Intl.NumberFormat("en-US").format(count);
 
+function formatPocketDisplayName(value) {
+  const filename = String(value ?? "")
+    .split("/")
+    .pop();
+
+  const match = filename.match(
+    /^([A-Za-z0-9]+)_chain-([A-Za-z0-9]+)_site-([0-9]+)\.pdb$/i,
+  );
+
+  if (!match) {
+    return filename.replace(/\.pdb$/i, "");
+  }
+
+  const [, pdbId, chain, site] = match;
+
+  return `${pdbId.toUpperCase()}_Chain-${chain.toUpperCase()} (Site: ${site})`;
+}
+
 export default function AnionPDBPage({ setPage }) {
   const { error, isLoading, manifest, sites } = useBindingSites();
   const [query, setQuery] = useState("");
@@ -18,8 +36,8 @@ export default function AnionPDBPage({ setPage }) {
   const [selectedSiteIds, setSelectedSiteIds] = useState(() => new Set());
   const [downloadError, setDownloadError] = useState("");
   const [isPreparingDownload, setIsPreparingDownload] = useState(false);
-  const [activeLigands, setActiveLigands] = useState(() =>
-    new Set(AVAILABLE_LIGANDS),
+  const [activeLigands, setActiveLigands] = useState(
+    () => new Set(AVAILABLE_LIGANDS),
   );
 
   const openPhosFate = (event) => {
@@ -65,9 +83,10 @@ export default function AnionPDBPage({ setPage }) {
     }, 0);
   }, [activeLigands, manifest]);
   const hasQuery = Boolean(query.trim());
-  const resultCount = hasQuery || !recoveredResultCount
-    ? filteredSites.length
-    : recoveredResultCount;
+  const resultCount =
+    hasQuery || !recoveredResultCount
+      ? filteredSites.length
+      : recoveredResultCount;
   const resultCountLabel = hasQuery
     ? "indexed binding-site records"
     : "recovered binding-site records";
@@ -159,7 +178,10 @@ export default function AnionPDBPage({ setPage }) {
       if (selectedSites.length) {
         await downloadPdbZip(selectedSites, "anionpdb-selected-pdb-files.zip");
       } else {
-        await downloadPdbTar(filteredPdbPaths, "anionpdb-filtered-pdb-files.tar");
+        await downloadPdbTar(
+          filteredPdbPaths,
+          "anionpdb-filtered-pdb-files.tar",
+        );
       }
     } catch (downloadError) {
       setDownloadError(downloadError.message);
@@ -356,13 +378,16 @@ export default function AnionPDBPage({ setPage }) {
             ) : (
               <div className="site-list">
                 {visibleSites.map((site) => (
-                  <div
-                    className="site-row"
-                    key={site.id}
-                  >
+                  <div className="site-row" key={site.id}>
                     <span>{site.pdbId}</span>
                     <span>
-                      <b>{site.id}</b>
+                      <b>
+                        <strong>
+                          {String(site.pdbId ?? "").toUpperCase()}_Chain-
+                          {String(site.chain ?? "").toUpperCase()} (Site:{" "}
+                          {site.site})
+                        </strong>
+                      </b>
                       <small>
                         chain {site.chain} · site {site.site} · residues{" "}
                         {site.residueIndices.slice(0, 6).join(", ")}
@@ -383,7 +408,10 @@ export default function AnionPDBPage({ setPage }) {
                     >
                       Use
                     </button>
-                    <label className="row-check" aria-label={"Select " + site.id}>
+                    <label
+                      className="row-check"
+                      aria-label={"Select " + site.id}
+                    >
                       <input
                         checked={selectedSiteIds.has(site.id)}
                         onChange={() => toggleSelectedSite(site.id)}
@@ -425,7 +453,6 @@ export default function AnionPDBPage({ setPage }) {
               <p className="download-error">{downloadError}</p>
             ) : null}
           </div>
-
         </section>
       </main>
     </>
