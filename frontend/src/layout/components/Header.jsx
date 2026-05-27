@@ -1,4 +1,8 @@
+import { useState } from "react";
+
 export default function Header({ page, setPage }) {
+  const [openDropdown, setOpenDropdown] = useState(null);
+
   const pagePath = {
     anion: "/home",
     phosfate: "/PhosFate",
@@ -6,6 +10,7 @@ export default function Header({ page, setPage }) {
 
   const goTo = (target) => (event) => {
     event.preventDefault();
+    setOpenDropdown(null);
     setPage(target);
   };
 
@@ -39,7 +44,15 @@ export default function Header({ page, setPage }) {
         <a className="pill" href="/home#guide">
           Guide
         </a>
-        <details className="nav-dropdown">
+        <details
+          className="nav-dropdown"
+          open={openDropdown === "ftp"}
+          onToggle={(event) => {
+            if (event.currentTarget.open) {
+              setOpenDropdown("ftp");
+            }
+          }}
+        >
           <summary>FTP access</summary>
           <div className="nav-panel">
             <strong>Download AnionPDB PDB files</strong>
@@ -61,13 +74,21 @@ export default function Header({ page, setPage }) {
             </ol>
           </div>
         </details>
-        <details className="nav-dropdown">
+        <details
+          className="nav-dropdown"
+          open={openDropdown === "cite"}
+          onToggle={(event) => {
+            if (event.currentTarget.open) {
+              setOpenDropdown("cite");
+            }
+          }}
+        >
           <summary>Cite AnionPDB</summary>
           <div className="nav-panel">
             Re-annotation of Anion-Binding Pockets using Binding Probability
             Distributions in AnionPDB. Arunraj B., Priyanshu Gupta, Riza
-            Danurdoro, Curwen Pei Hong Tan, Narayana R. Aluru, Manish Kumar,
-            and Ratul Chowdhury* (Under Review)
+            Danurdoro, Curwen Pei Hong Tan, Narayana R. Aluru, Manish Kumar, and
+            Ratul Chowdhury* (Under Review)
           </div>
         </details>
         <a className="link" href="/home#lab">
