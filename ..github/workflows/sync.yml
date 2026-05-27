@@ -1,0 +1,27 @@
+name: Sync to Hugging Face Hub
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          lfs: true
+
+      - name: Push to Hugging Face Hub
+        env:
+          # This pulls your real hf_... token securely from GitHub Secrets
+          HF_TOKEN: ${{ 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 }}
+        run: |
+          # 1. Fetch all LFS pointers to make sure large dataset files migrate fully
+          git lfs fetch --all
+          git lfs checkout
+
+          # 2. Force-push the local main branch directly to the Hugging Face dataset space
+          git push --force https://ChowdhuryRatul:$HF_TOKEN@huggingface.co/datasets/ChowdhuryRatul/PhosFate main
