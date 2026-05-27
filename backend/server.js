@@ -1,4 +1,3 @@
-// What current backend look like
 const express = require("express");
 const cors = require("cors");
 const path = require("path");
@@ -7,10 +6,18 @@ const fs = require("fs");
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-const DATA_DIR = path.join(__dirname, "data");
-const DISTANCE_DIR = path.join(DATA_DIR, "Distance-5.0");
+const POCKET_PDBS_DIR = path.join(__dirname, "Pocket_pdbs");
 
-const ALLOWED_LIGANDS = ["Chloride", "Nitrate", "Phosphate", "Sulfate"];
+// New ligand folders
+const LIGAND_FOLDERS = {
+  Chloride: "Chloride_pockets",
+  Nitrate: "Nitrate_pockets",
+  Phosphate: "Phosphate_pockets",
+  Sulfate: "Sulfate_pockets",
+  Carbonate: "Carbonate_pockets",
+};
+
+const ALLOWED_LIGANDS = Object.keys(LIGAND_FOLDERS);
 
 app.use(cors());
 app.use(express.json());
@@ -47,8 +54,19 @@ function normalizeLigand(ligand) {
   if (value === "nitrate" || value === "no3") return "Nitrate";
   if (value === "phosphate" || value === "po4") return "Phosphate";
   if (value === "sulfate" || value === "so4") return "Sulfate";
+  if (value === "carbonate" || value === "co3") return "Carbonate";
 
   return ligand;
+}
+
+function ligandFolderPath(ligand) {
+  const folderName = LIGAND_FOLDERS[ligand];
+
+  if (!folderName) {
+    return null;
+  }
+
+  return safeJoin(POCKET_PDBS_DIR, folderName);
 }
 
 function parseResidueIndicesFromText(text) {
@@ -83,13 +101,39 @@ function parseSitePdbFile(file) {
   }
 
   return {
-    pdbId: match[1],
+    pdbId: match[1].toUpperCase(),
     chain: match[2],
     site: match[3],
   };
 }
 
-function buildSiteRecord({ req, ligand, pdbId, file }) {
+function walkFiles(dir) {
+  if (!dir || !fs.existsSync(dir)) {
+    return [];
+  }
+
+  const output = [];
+
+  for (const item of fs.readdirSync(dir)) {
+    const itemPath = path.join(dir, item);
+    const stat = fs.statSync(itemPath);
+
+    if (stat.isDirectory()) {
+      output.push(...walkFiles(itemPath));
+    } else {
+      output.push(itemPath);
+    }
+  }
+
+  return output;
+}
+
+function getRelativePocketPath(fullPath) {
+  return path.relative(POCKET_PDBS_DIR, fullPath).replace(/\\/g, "/");
+}
+
+function buildSiteRecord({ req, ligand, pdbFilePath }) {
+  const file = path.basename(pdbFilePath);
   const parsed = parseSitePdbFile(file);
 
   if (!parsed) {
@@ -97,110 +141,99 @@ function buildSiteRecord({ req, ligand, pdbId, file }) {
   }
 
   const residueFile = file.replace(".pdb", "_residue_indices.txt");
-
-  const pdbFilePath = safeJoin(DISTANCE_DIR, ligand, pdbId, file);
-  const residueFilePath = safeJoin(DISTANCE_DIR, ligand, pdbId, residueFile);
+  const residueFilePath = path.join(path.dirname(pdbFilePath), residueFile);
 
   const residueIndices = readResidueIndices(residueFilePath);
   const apiBase = getApiBase(req);
 
-  const relativePdbPath = `/data/Distance-5.0/${ligand}/${pdbId}/${file}`;
-  const relativeResiduePath = `/data/Distance-5.0/${ligand}/${pdbId}/${residueFile}`;
+  const relativePdbSubPath = getRelativePocketPath(pdbFilePath);
+  const relativeResidueSubPath = getRelativePocketPath(residueFilePath);
+
+  const relativePdbPath = `/pockets/${relativePdbSubPath}`;
+  const relativeResiduePath = `/pockets/${relativeResidueSubPath}`;
 
   return {
-    id: `${pdbId}_chain-${parsed.chain}_site-${parsed.site}`,
+    id: `${parsed.pdbId}_chain-${parsed.chain}_site-${parsed.site}`,
     ligand,
-    pdbId,
+    pdbId: parsed.pdbId,
     chain: parsed.chain,
     site: parsed.site,
 
     pdbFile: file,
     residueFile,
 
-    // absolute paths so StructureViewer fetches from API, not frontend origin
+    // Absolute URL for StructureViewer
     pdbPath: `${apiBase}${relativePdbPath}`,
     residuePath: `${apiBase}${relativeResiduePath}`,
     pdbUrl: `${apiBase}${relativePdbPath}`,
     residueUrl: `${apiBase}${relativeResiduePath}`,
 
-    // relative paths
     relativePdbPath,
     relativeResiduePath,
 
     residueCount: residueIndices.length,
     residueIndices,
 
-    hasPdbFile: Boolean(pdbFilePath && fs.existsSync(pdbFilePath)),
-    hasResidueFile: Boolean(residueFilePath && fs.existsSync(residueFilePath)),
+    hasPdbFile: fs.existsSync(pdbFilePath),
+    hasResidueFile: fs.existsSync(residueFilePath),
+  };
+}
+
+function scanLigandSites(req, ligand) {
+  const folderPath = ligandFolderPath(ligand);
+
+  if (!folderPath || !fs.existsSync(folderPath)) {
+    return {
+      ligand,
+      projectCount: 0,
+      sites: [],
+    };
+  }
+
+  const pdbFiles = walkFiles(folderPath)
+    .filter(
+      (filePath) =>
+        filePath.endsWith(".pdb") && !filePath.includes("_residue_indices"),
+    )
+    .sort();
+
+  const sites = pdbFiles
+    .map((pdbFilePath) =>
+      buildSiteRecord({
+        req,
+        ligand,
+        pdbFilePath,
+      }),
+    )
+    .filter(Boolean);
+
+  const pdbFolders = new Set(sites.map((site) => site.pdbId));
+
+  return {
+    ligand,
+    projectCount: pdbFolders.size,
+    sites,
   };
 }
 
 function scanAllSites(req) {
   const allSites = [];
-  const ligandSummaries = [];
+  const ligands = [];
 
   for (const ligand of ALLOWED_LIGANDS) {
-    const ligandDir = safeJoin(DISTANCE_DIR, ligand);
+    const result = scanLigandSites(req, ligand);
 
-    if (!ligandDir || !fs.existsSync(ligandDir)) {
-      ligandSummaries.push({
-        ligand,
-        siteCount: 0,
-        projectCount: 0,
-      });
-      continue;
-    }
+    allSites.push(...result.sites);
 
-    const pdbFolders = fs
-      .readdirSync(ligandDir)
-      .filter((item) => {
-        const itemPath = safeJoin(ligandDir, item);
-        return (
-          itemPath &&
-          fs.existsSync(itemPath) &&
-          fs.statSync(itemPath).isDirectory()
-        );
-      })
-      .sort();
-
-    let ligandSiteCount = 0;
-
-    for (const pdbId of pdbFolders) {
-      const pdbFolder = safeJoin(ligandDir, pdbId);
-
-      if (!pdbFolder) continue;
-
-      const files = fs
-        .readdirSync(pdbFolder)
-        .filter(
-          (file) => file.endsWith(".pdb") && !file.includes("_residue_indices"),
-        )
-        .sort();
-
-      for (const file of files) {
-        const siteRecord = buildSiteRecord({
-          req,
-          ligand,
-          pdbId,
-          file,
-        });
-
-        if (siteRecord) {
-          allSites.push(siteRecord);
-          ligandSiteCount += 1;
-        }
-      }
-    }
-
-    ligandSummaries.push({
+    ligands.push({
       ligand,
-      siteCount: ligandSiteCount,
-      projectCount: pdbFolders.length,
+      siteCount: result.sites.length,
+      projectCount: result.projectCount,
     });
   }
 
   return {
-    ligands: ligandSummaries,
+    ligands,
     sites: allSites,
     totalSites: allSites.length,
   };
@@ -210,8 +243,12 @@ app.get("/api/health", (req, res) => {
   res.json({
     ok: true,
     message: "PhosFate workstation API is running",
-    dataDir: DATA_DIR,
-    distanceDir: DISTANCE_DIR,
+    pocketPdbsDir: POCKET_PDBS_DIR,
+    ligands: ALLOWED_LIGANDS.map((ligand) => ({
+      ligand,
+      folder: LIGAND_FOLDERS[ligand],
+      exists: fs.existsSync(ligandFolderPath(ligand)),
+    })),
   });
 });
 
@@ -219,7 +256,7 @@ app.get("/api/binding-sites", (req, res) => {
   try {
     const { ligand, pdbId, chain, site } = req.query;
 
-    let manifest = scanAllSites(req);
+    const manifest = scanAllSites(req);
     let sites = manifest.sites;
 
     if (ligand) {
@@ -259,7 +296,6 @@ app.get("/api/binding-sites", (req, res) => {
   }
 });
 
-// selected-site endpoint
 app.get("/api/binding-site", (req, res) => {
   try {
     const { ligand, pdbId, chain, site } = req.query;
@@ -268,7 +304,7 @@ app.get("/api/binding-site", (req, res) => {
       return res.status(400).json({
         error: "Missing ligand, pdbId, or chain",
         example:
-          "/api/binding-site?ligand=Chloride&pdbId=1A2A&chain=A&site=5721",
+          "/api/binding-site?ligand=Carbonate&pdbId=1A2A&chain=A&site=5721",
       });
     }
 
@@ -276,39 +312,17 @@ app.get("/api/binding-site", (req, res) => {
     const normalizedPdbId = String(pdbId).toUpperCase();
     const normalizedChain = String(chain).toUpperCase();
 
-    const pdbFolder = safeJoin(DISTANCE_DIR, normalizedLigand, normalizedPdbId);
+    const result = scanLigandSites(req, normalizedLigand);
 
-    if (!pdbFolder || !fs.existsSync(pdbFolder)) {
-      return res.status(404).json({
-        error: "PDB folder not found",
-        ligand: normalizedLigand,
-        pdbId: normalizedPdbId,
-        expectedFolder: pdbFolder,
-      });
-    }
+    const matchedSite = result.sites.find((item) => {
+      const pdbMatches = item.pdbId.toUpperCase() === normalizedPdbId;
+      const chainMatches = item.chain.toUpperCase() === normalizedChain;
+      const siteMatches = site ? String(item.site) === String(site) : true;
 
-    const files = fs
-      .readdirSync(pdbFolder)
-      .filter(
-        (file) => file.endsWith(".pdb") && !file.includes("_residue_indices"),
-      );
-
-    const matchedFile = files.find((file) => {
-      const parsed = parseSitePdbFile(file);
-
-      if (!parsed) {
-        return false;
-      }
-
-      const chainMatches =
-        String(parsed.chain).toUpperCase() === normalizedChain;
-
-      const siteMatches = site ? String(parsed.site) === String(site) : true;
-
-      return chainMatches && siteMatches;
+      return pdbMatches && chainMatches && siteMatches;
     });
 
-    if (!matchedFile) {
+    if (!matchedSite) {
       return res.status(404).json({
         error: "No matching binding site found",
         query: {
@@ -317,20 +331,18 @@ app.get("/api/binding-site", (req, res) => {
           chain: normalizedChain,
           site: site || null,
         },
-        availableSites: files
-          .map((file) => parseSitePdbFile(file))
-          .filter(Boolean),
+        availableSites: result.sites
+          .filter((item) => item.pdbId.toUpperCase() === normalizedPdbId)
+          .map((item) => ({
+            id: item.id,
+            chain: item.chain,
+            site: item.site,
+            pdbFile: item.pdbFile,
+          })),
       });
     }
 
-    const siteRecord = buildSiteRecord({
-      req,
-      ligand: normalizedLigand,
-      pdbId: normalizedPdbId,
-      file: matchedFile,
-    });
-
-    res.json(siteRecord);
+    res.json(matchedSite);
   } catch (error) {
     console.error(error);
     res.status(500).json({
@@ -340,39 +352,24 @@ app.get("/api/binding-site", (req, res) => {
   }
 });
 
-// all sites for one ligand + PDB folder
 app.get("/api/binding-sites/:ligand/:pdbId", (req, res) => {
   try {
     const ligand = normalizeLigand(req.params.ligand);
     const pdbId = String(req.params.pdbId || "").toUpperCase();
 
-    const pdbFolder = safeJoin(DISTANCE_DIR, ligand, pdbId);
+    const result = scanLigandSites(req, ligand);
 
-    if (!pdbFolder || !fs.existsSync(pdbFolder)) {
+    const sites = result.sites.filter(
+      (item) => item.pdbId.toUpperCase() === pdbId,
+    );
+
+    if (!sites.length) {
       return res.status(404).json({
-        error: "PDB folder not found",
+        error: "No sites found for this ligand and PDB ID",
         ligand,
         pdbId,
       });
     }
-
-    const files = fs
-      .readdirSync(pdbFolder)
-      .filter(
-        (file) => file.endsWith(".pdb") && !file.includes("_residue_indices"),
-      )
-      .sort();
-
-    const sites = files
-      .map((file) =>
-        buildSiteRecord({
-          req,
-          ligand,
-          pdbId,
-          file,
-        }),
-      )
-      .filter(Boolean);
 
     res.json({
       ligand,
@@ -389,10 +386,10 @@ app.get("/api/binding-sites/:ligand/:pdbId", (req, res) => {
   }
 });
 
-// Serve actual PDB and residue txt files
-app.get(/^\/data\/(.+)$/, (req, res) => {
+// Serve PDB and residue txt files
+app.get(/^\/pockets\/(.+)$/, (req, res) => {
   const requestedPath = req.params[0];
-  const filePath = safeJoin(DATA_DIR, requestedPath);
+  const filePath = safeJoin(POCKET_PDBS_DIR, requestedPath);
 
   if (!filePath) {
     return res.status(400).json({
