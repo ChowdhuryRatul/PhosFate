@@ -8,6 +8,16 @@ const PORT = process.env.PORT || 3000;
 
 const POCKET_PDBS_DIR = path.join(__dirname, "Pocket_pdbs");
 
+const PROBABILITY_CSV_PATH = path.join(
+  POCKET_PDBS_DIR,
+  "all_probilities_and_true_lables.csv",
+);
+
+let probabilityCache = {
+  mtimeMs: null,
+  map: new Map(),
+};
+
 // New ligand folders
 const LIGAND_FOLDERS = {
   Chloride: "Chloride_pockets",
@@ -132,6 +142,111 @@ function getRelativePocketPath(fullPath) {
   return path.relative(POCKET_PDBS_DIR, fullPath).replace(/\\/g, "/");
 }
 
+function parseCsvLine(line) {
+  const result = [];
+  let current = "";
+  let inQuotes = false;
+
+  for (let i = 0; i < line.length; i += 1) {
+    const char = line[i];
+    const nextChar = line[i + 1];
+
+    if (char === '"' && inQuotes && nextChar === '"') {
+      current += '"';
+      i += 1;
+    } else if (char === '"') {
+      inQuotes = !inQuotes;
+    } else if (char === "," && !inQuotes) {
+      result.push(current);
+      current = "";
+    } else {
+      current += char;
+    }
+  }
+
+  result.push(current);
+  return result;
+}
+
+function toNumber(value) {
+  const numberValue = Number(value);
+  return Number.isFinite(numberValue) ? numberValue : 0;
+}
+
+function normalizeProbabilityKey(value) {
+  return String(value || "")
+    .trim()
+    .toUpperCase();
+}
+
+function loadProbabilityMap() {
+  if (!fs.existsSync(PROBABILITY_CSV_PATH)) {
+    return new Map();
+  }
+
+  const stat = fs.statSync(PROBABILITY_CSV_PATH);
+
+  if (
+    probabilityCache.mtimeMs === stat.mtimeMs &&
+    probabilityCache.map instanceof Map
+  ) {
+    return probabilityCache.map;
+  }
+
+  const csvText = fs.readFileSync(PROBABILITY_CSV_PATH, "utf8");
+  const lines = csvText.split(/\r?\n/).filter((line) => line.trim());
+
+  if (lines.length < 2) {
+    probabilityCache = {
+      mtimeMs: stat.mtimeMs,
+      map: new Map(),
+    };
+    return probabilityCache.map;
+  }
+
+  const headers = parseCsvLine(lines[0]).map((header) => header.trim());
+  const map = new Map();
+
+  for (const line of lines.slice(1)) {
+    const values = parseCsvLine(line);
+    const row = {};
+
+    headers.forEach((header, index) => {
+      row[header] = values[index];
+    });
+
+    const key = normalizeProbabilityKey(row.pdb_chain_id);
+
+    if (!key) {
+      continue;
+    }
+
+    map.set(key, {
+      Phosphate: toNumber(row.proba_phosphate),
+      Sulfate: toNumber(row.proba_sulfate),
+      Chloride: toNumber(row.proba_chloride),
+      Nitrate: toNumber(row.proba_nitrate),
+      Carbonate: toNumber(row.proba_carbonate),
+    });
+  }
+
+  probabilityCache = {
+    mtimeMs: stat.mtimeMs,
+    map,
+  };
+
+  console.log(`Loaded ${map.size} PhosFate probability rows`);
+
+  return map;
+}
+
+function getProbabilityForSite(pdbId, chain) {
+  const probabilityMap = loadProbabilityMap();
+  const key = normalizeProbabilityKey(`${pdbId}-${chain}`);
+
+  return probabilityMap.get(key) || null;
+}
+
 function buildSiteRecord({ req, ligand, pdbFilePath }) {
   const file = path.basename(pdbFilePath);
   const parsed = parseSitePdbFile(file);
@@ -145,6 +260,7 @@ function buildSiteRecord({ req, ligand, pdbFilePath }) {
 
   const residueIndices = readResidueIndices(residueFilePath);
   const apiBase = getApiBase(req);
+  const phosFateScores = getProbabilityForSite(parsed.pdbId, parsed.chain);
 
   const relativePdbSubPath = getRelativePocketPath(pdbFilePath);
   const relativeResidueSubPath = getRelativePocketPath(residueFilePath);
@@ -173,6 +289,10 @@ function buildSiteRecord({ req, ligand, pdbFilePath }) {
 
     residueCount: residueIndices.length,
     residueIndices,
+
+    phosFateScores,
+    predictionScores: phosFateScores,
+    hasPhosFateScores: Boolean(phosFateScores),
 
     hasPdbFile: fs.existsSync(pdbFilePath),
     hasResidueFile: fs.existsSync(residueFilePath),
@@ -244,6 +364,11 @@ app.get("/api/health", (req, res) => {
     ok: true,
     message: "PhosFate workstation API is running",
     pocketPdbsDir: POCKET_PDBS_DIR,
+    probabilityCsv: {
+      path: PROBABILITY_CSV_PATH,
+      exists: fs.existsSync(PROBABILITY_CSV_PATH),
+      rows: loadProbabilityMap().size,
+    },
     ligands: ALLOWED_LIGANDS.map((ligand) => ({
       ligand,
       folder: LIGAND_FOLDERS[ligand],
