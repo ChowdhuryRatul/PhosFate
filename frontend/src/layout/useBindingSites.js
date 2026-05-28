@@ -4,10 +4,10 @@ const SELECTED_SITE_KEY = "phosfate:selected-binding-site";
 
 export const API_BASE =
   import.meta.env.VITE_PHOSFATE_API_BASE ||
-  "https://anionpdb-api.structf.studio";
+  "https://phosfate-api.structf.studio";
 
 export const AVAILABLE_LIGANDS = new Set([
-  // "Carbonate",
+  "Carbonate",
   "Phosphate",
   "Sulfate",
   "Chloride",

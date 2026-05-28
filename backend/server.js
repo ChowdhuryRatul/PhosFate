@@ -263,7 +263,13 @@ function wantsPhosFateStream(req) {
   );
 }
 
-function runPhosFateInference({ sequence, jobName, topK, distance, onProgress }) {
+function runPhosFateInference({
+  sequence,
+  jobName,
+  topK,
+  distance,
+  onProgress,
+}) {
   return new Promise((resolve, reject) => {
     const pythonExecutable = getPythonExecutable();
     const args = [
@@ -771,7 +777,11 @@ app.post("/api/phosfate/run", async (req, res) => {
     const jobName = safeJobName(
       req.body?.jobName ||
         req.body?.job_name ||
-        "phosfate_" + new Date().toISOString().replace(/[^0-9]/g, "").slice(0, 14),
+        "phosfate_" +
+          new Date()
+            .toISOString()
+            .replace(/[^0-9]/g, "")
+            .slice(0, 14),
     );
     const topK = Math.max(1, Math.min(10, Number(req.body?.topK || 5)));
     const distance = Number(req.body?.distance || 5.0);
@@ -780,7 +790,9 @@ app.post("/api/phosfate/run", async (req, res) => {
       if (stream) {
         sendErrorEvent(
           res,
-          new Error("Distance cutoff must be a positive number no greater than 20"),
+          new Error(
+            "Distance cutoff must be a positive number no greater than 20",
+          ),
         );
         return;
       }

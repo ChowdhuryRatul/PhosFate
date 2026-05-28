@@ -496,10 +496,9 @@ body.page-anion .arrows button:disabled {
 }
 body.page-anion .table-head {
   display: grid;
-  grid-template-columns: minmax(58px, 0.7fr) minmax(180px, 2.25fr) minmax(
-      92px,
-      0.95fr
-    ) minmax(86px, 0.8fr) minmax(48px, 0.45fr) minmax(58px, 0.42fr);
+  grid-template-columns:
+    minmax(58px, 0.7fr) minmax(180px, 2.25fr) minmax(92px, 0.95fr)
+    minmax(86px, 0.8fr) minmax(48px, 0.45fr) minmax(58px, 0.42fr);
   gap: 12px;
   align-items: center;
   margin-top: 18px;
@@ -638,10 +637,9 @@ body.page-anion .site-list {
 body.page-anion .site-row {
   width: 100%;
   display: grid;
-  grid-template-columns: minmax(58px, 0.7fr) minmax(180px, 2.25fr) minmax(
-      92px,
-      0.95fr
-    ) minmax(86px, 0.8fr) minmax(48px, 0.45fr) minmax(58px, 0.42fr);
+  grid-template-columns:
+    minmax(58px, 0.7fr) minmax(180px, 2.25fr) minmax(92px, 0.95fr)
+    minmax(86px, 0.8fr) minmax(48px, 0.45fr) minmax(58px, 0.42fr);
   gap: 12px;
   align-items: center;
   border: 1px solid var(--line);
@@ -1861,5 +1859,154 @@ body.page-phosfate .download-row .gray:disabled {
   }
   body.page-phosfate .bar span {
     font-size: 11px;
+  }
+}
+
+.guide-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  background: rgba(255, 255, 255, 0.82);
+  backdrop-filter: blur(12px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 28px;
+}
+
+.guide-modal {
+  display: block;
+  position: relative;
+  width: min(1100px, 94vw);
+  max-height: 88vh;
+  overflow-y: auto;
+  background: #fff;
+  color: #111;
+  border-radius: var(--radius); /* matches site's 24px */
+  border: 1px solid var(--line);
+  padding: 40px 44px 48px;
+  box-shadow: var(--shadow); /* matches site shadow */
+  font-family:
+    -apple-system, BlinkMacSystemFont, "Inter", "Helvetica Neue", Arial,
+    sans-serif;
+}
+
+.guide-got {
+  position: absolute;
+  top: 28px;
+  right: 32px;
+  border: 1px solid var(--line);
+  background: white;
+  border-radius: 999px; /* pill shape — matches nav pills */
+  padding: 10px 18px;
+  font-size: 14px;
+  font-weight: 800;
+  cursor: pointer;
+  color: #222;
+  letter-spacing: 0;
+}
+
+.guide-got:hover {
+  border-color: var(--blue);
+  color: var(--blue);
+}
+
+.guide-kicker {
+  display: block;
+  color: var(--muted);
+  font-size: 12px;
+  letter-spacing: 0.1em;
+  font-weight: 900;
+  margin-bottom: 12px;
+  text-transform: uppercase;
+}
+
+.guide-title {
+  font-size: clamp(42px, 5.5vw, 72px);
+  line-height: 0.95;
+  font-weight: 500; /* matches .brand h1 weight */
+  letter-spacing: -0.06em; /* matches .brand h1 */
+  margin: 0 0 20px;
+  color: var(--ink);
+  font-family: inherit; /* no serif — matches site */
+}
+
+.guide-intro {
+  color: var(--muted);
+  font-size: 15px;
+  line-height: 1.4;
+  font-weight: 400;
+  max-width: 680px;
+  margin: 0 0 36px;
+  letter-spacing: 0;
+}
+
+.guide-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.guide-card {
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 22px 22px 26px;
+  background: #fff;
+  box-shadow: none; /* site cards rely on border, not shadow */
+}
+
+.guide-num {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 28px;
+  min-width: 48px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  font-size: 12px;
+  font-weight: 900;
+  letter-spacing: 0.08em;
+  background: white;
+  color: #777;
+  margin-bottom: 18px;
+}
+
+.guide-card h2 {
+  margin: 0 0 10px;
+  font-size: 22px;
+  line-height: 1;
+  font-weight: 500;
+  letter-spacing: -0.04em;
+  color: var(--ink);
+}
+
+.guide-card p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 14px;
+  line-height: 1.45;
+  font-weight: 400;
+  letter-spacing: 0;
+}
+
+.guide-brand {
+  margin-top: 32px;
+  color: #bbb;
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0;
+}
+
+@media (max-width: 860px) {
+  .guide-modal {
+    padding: 28px 22px 32px;
+  }
+  .guide-got {
+    position: static;
+    display: inline-block;
+    margin-bottom: 20px;
+  }
+  .guide-grid {
+    grid-template-columns: 1fr;
   }
 }
