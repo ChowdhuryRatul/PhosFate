@@ -1,5 +1,5 @@
 export const anionFilters = [
-  // "Carbonate CO₃²⁻",
+  "Carbonate CO₃²⁻",
   "Phosphate PO₄³⁻",
   "Sulfate SO₄²⁻",
   "Chloride Cl⁻",
