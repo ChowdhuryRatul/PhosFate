@@ -22,7 +22,7 @@ export default function Header({ page, setPage }) {
         </a>
         <span>
           {page === "phosfate"
-            ? "PhosFate phosphate-selectivity re-annotation within StructF.studio"
+            ? "Anion pocket design workbench within StructF.studio"
             : "Anion-binding pocket AI workbench within StructF.studio"}
         </span>
       </div>

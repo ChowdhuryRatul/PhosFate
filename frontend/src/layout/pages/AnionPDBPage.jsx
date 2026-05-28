@@ -269,7 +269,7 @@ export default function AnionPDBPage({ setPage }) {
 
           <div className="card data-summary">
             <p className="filter-title">
-              <span className="dot" /> Recovered Distance-5.0 data
+              <span className="dot" /> 5Å pocket distribution
             </p>
             <div className="summary-grid">
               {(manifest?.ligands ?? []).map((ligand) => (
