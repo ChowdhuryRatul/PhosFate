@@ -2,11 +2,34 @@ const express = require("express");
 const cors = require("cors");
 const path = require("path");
 const fs = require("fs");
+const { spawn } = require("child_process");
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 
 const POCKET_PDBS_DIR = path.join(__dirname, "Pocket_pdbs");
+const REPO_ROOT = path.resolve(__dirname, "..");
+const PHOSFATE_RUNS_DIR =
+  process.env.PHOSFATE_RUNS_DIR || path.join(__dirname, "phosfate_runs");
+const PHOSFATE_RUNNER =
+  process.env.PHOSFATE_RUNNER || path.join(__dirname, "phosfate_runner.py");
+const PHOSFATE_MODEL_DIR =
+  process.env.PHOSFATE_MODEL_DIR ||
+  path.join(
+    REPO_ROOT,
+    "Results",
+    "results_mlp_BW_hparam_sweep",
+    "best_model_20260320-103259",
+  );
+const PHOSFATE_PYTHON =
+  process.env.PHOSFATE_PYTHON ||
+  path.join(REPO_ROOT, ".venv-phosfate", "bin", "python");
+const PHOSFATE_TIMEOUT_MS = Number(
+  process.env.PHOSFATE_TIMEOUT_MS || 60 * 60 * 1000,
+);
+const PHOSFATE_MAX_SEQUENCE_LENGTH = Number(
+  process.env.PHOSFATE_MAX_SEQUENCE_LENGTH || 1023,
+);
 
 const PROBABILITY_CSV_PATH = path.join(
   POCKET_PDBS_DIR,
@@ -30,7 +53,7 @@ const LIGAND_FOLDERS = {
 const ALLOWED_LIGANDS = Object.keys(LIGAND_FOLDERS);
 
 app.use(cors());
-app.use(express.json());
+app.use(express.json({ limit: "2mb" }));
 
 app.get("/", (req, res) => {
   res.send("PhosFate workstation API is running");
@@ -67,6 +90,307 @@ function normalizeLigand(ligand) {
   if (value === "carbonate" || value === "co3") return "Carbonate";
 
   return ligand;
+}
+
+function normalizePhosFateScoreMap(scoreMap) {
+  if (!scoreMap || typeof scoreMap !== "object") {
+    return null;
+  }
+
+  const normalized = {};
+
+  for (const [key, value] of Object.entries(scoreMap)) {
+    const ligand = normalizeLigand(key);
+    const numberValue = Number(value);
+
+    if (ALLOWED_LIGANDS.includes(ligand) && Number.isFinite(numberValue)) {
+      normalized[ligand] = numberValue;
+    }
+  }
+
+  return Object.keys(normalized).length ? normalized : null;
+}
+
+function cleanProteinSequence(sequence) {
+  return String(sequence || "")
+    .replace(/\s+/g, "")
+    .toUpperCase();
+}
+
+function validateProteinSequence(sequence) {
+  const cleaned = cleanProteinSequence(sequence);
+  const invalid = [...new Set(cleaned.replace(/[ACDEFGHIKLMNPQRSTVWY]/g, ""))];
+
+  if (!cleaned) {
+    return {
+      ok: false,
+      error: "Protein sequence is required",
+    };
+  }
+
+  if (invalid.length) {
+    return {
+      ok: false,
+      error:
+        "Protein sequence contains invalid amino acids: " + invalid.join(", "),
+    };
+  }
+
+  if (cleaned.length > PHOSFATE_MAX_SEQUENCE_LENGTH) {
+    return {
+      ok: false,
+      error:
+        "Protein sequence is " +
+        cleaned.length +
+        " residues; maximum supported length is " +
+        PHOSFATE_MAX_SEQUENCE_LENGTH,
+    };
+  }
+
+  return {
+    ok: true,
+    sequence: cleaned,
+  };
+}
+
+function safeJobName(value) {
+  return (
+    String(value || "")
+      .trim()
+      .replace(/[^A-Za-z0-9_.-]+/g, "_")
+      .replace(/^[._-]+|[._-]+$/g, "") || "phosfate_job"
+  );
+}
+
+function getPythonExecutable() {
+  if (fs.existsSync(PHOSFATE_PYTHON)) {
+    return PHOSFATE_PYTHON;
+  }
+
+  return process.env.PYTHON || "python3";
+}
+
+function getRunFileUrl(req, relativePath) {
+  return getApiBase(req) + "/phosfate-runs/" + relativePath;
+}
+
+function normalizeRunnerPocket(req, pocket) {
+  const scoreMap = normalizePhosFateScoreMap(pocket.phosFateScores);
+  const relativePdbPath = "/phosfate-runs/" + pocket.pdbPath;
+  const relativeGeneratedPdbPath = pocket.generatedPdbPath
+    ? "/phosfate-runs/" + pocket.generatedPdbPath
+    : null;
+
+  return {
+    ...pocket,
+    ligand: normalizeLigand(pocket.ligand),
+    pdbPath: getRunFileUrl(req, pocket.pdbPath),
+    pdbUrl: getRunFileUrl(req, pocket.pdbPath),
+    relativePdbPath,
+    generatedPdbPath: pocket.generatedPdbPath
+      ? getRunFileUrl(req, pocket.generatedPdbPath)
+      : null,
+    relativeGeneratedPdbPath,
+    phosFateScores: scoreMap,
+    predictionScores: scoreMap,
+    hasPhosFateScores: Boolean(scoreMap),
+  };
+}
+
+function parseRunnerProgressLine(line) {
+  const trimmed = String(line || "").trim();
+
+  if (!trimmed.startsWith("{")) {
+    return null;
+  }
+
+  try {
+    const event = JSON.parse(trimmed);
+
+    if (event?.type === "progress" && event.stage && event.message) {
+      return event;
+    }
+  } catch {
+    return null;
+  }
+
+  return null;
+}
+
+function formatPhosFateResult(req, result) {
+  const pockets = result.payload.pockets.map((pocket) =>
+    normalizeRunnerPocket(req, pocket),
+  );
+
+  return {
+    ...result.payload,
+    structure: {
+      ...result.payload.structure,
+      pdbPath: getRunFileUrl(req, result.payload.structure.pdbPath),
+      pdbUrl: getRunFileUrl(req, result.payload.structure.pdbPath),
+      relativePdbPath: "/phosfate-runs/" + result.payload.structure.pdbPath,
+    },
+    pockets,
+    sites: pockets,
+    selectedSite: pockets[0] || null,
+    logs: result.logs
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .filter(Boolean)
+      .slice(-40),
+  };
+}
+
+function sendProgress(res, event) {
+  res.write(JSON.stringify({ type: "progress", ...event }) + "\n");
+}
+
+function sendErrorEvent(res, error) {
+  res.write(
+    JSON.stringify({
+      type: "error",
+      error: "Failed to run PhosFate",
+      details: error.message,
+    }) + "\n",
+  );
+  res.end();
+}
+
+function wantsPhosFateStream(req) {
+  return (
+    req.query?.stream === "1" ||
+    String(req.headers.accept || "").includes("application/x-ndjson")
+  );
+}
+
+function runPhosFateInference({ sequence, jobName, topK, distance, onProgress }) {
+  return new Promise((resolve, reject) => {
+    const pythonExecutable = getPythonExecutable();
+    const args = [
+      PHOSFATE_RUNNER,
+      "--sequence",
+      sequence,
+      "--job-name",
+      jobName,
+      "--output-dir",
+      PHOSFATE_RUNS_DIR,
+      "--model-dir",
+      PHOSFATE_MODEL_DIR,
+      "--top-k",
+      String(topK),
+      "--distance",
+      String(distance),
+    ];
+
+    fs.mkdirSync(PHOSFATE_RUNS_DIR, { recursive: true });
+
+    const child = spawn(pythonExecutable, args, {
+      cwd: REPO_ROOT,
+      env: {
+        ...process.env,
+        PYTHONUNBUFFERED: "1",
+      },
+    });
+    let stdout = "";
+    let stderr = "";
+    let stderrLineBuffer = "";
+    let settled = false;
+
+    const timer = setTimeout(() => {
+      if (settled) {
+        return;
+      }
+
+      settled = true;
+      child.kill("SIGTERM");
+      reject(
+        new Error(
+          "PhosFate inference timed out after " +
+            Math.round(PHOSFATE_TIMEOUT_MS / 1000) +
+            " seconds",
+        ),
+      );
+    }, PHOSFATE_TIMEOUT_MS);
+
+    child.stdout.on("data", (chunk) => {
+      stdout += chunk.toString();
+    });
+
+    child.stderr.on("data", (chunk) => {
+      const text = chunk.toString();
+      stderr += text;
+      stderrLineBuffer += text;
+
+      const lines = stderrLineBuffer.split(/\r?\n/);
+      stderrLineBuffer = lines.pop() || "";
+
+      for (const line of lines) {
+        const progress = parseRunnerProgressLine(line);
+
+        if (progress) {
+          onProgress?.(progress);
+        }
+      }
+    });
+
+    child.on("error", (error) => {
+      if (settled) {
+        return;
+      }
+
+      settled = true;
+      clearTimeout(timer);
+      reject(error);
+    });
+
+    child.on("close", (code) => {
+      if (settled) {
+        return;
+      }
+
+      settled = true;
+      clearTimeout(timer);
+
+      let payload = null;
+
+      try {
+        const jsonLine = stdout
+          .split(/\r?\n/)
+          .map((line) => line.trim())
+          .filter(Boolean)
+          .at(-1);
+        payload = jsonLine ? JSON.parse(jsonLine) : null;
+      } catch (parseError) {
+        reject(
+          new Error(
+            "PhosFate runner returned invalid JSON: " +
+              parseError.message +
+              "\n" +
+              stderr,
+          ),
+        );
+        return;
+      }
+
+      if (code !== 0 || !payload?.ok) {
+        reject(
+          new Error(
+            payload?.error ||
+              "PhosFate runner exited with code " +
+                code +
+                ": " +
+                (stderr || stdout),
+          ),
+        );
+        return;
+      }
+
+      resolve({
+        payload,
+        logs: stderr,
+      });
+    });
+  });
 }
 
 function ligandFolderPath(ligand) {
@@ -364,6 +688,16 @@ app.get("/api/health", (req, res) => {
     ok: true,
     message: "PhosFate workstation API is running",
     pocketPdbsDir: POCKET_PDBS_DIR,
+    phosFateRuntime: {
+      python: getPythonExecutable(),
+      runner: PHOSFATE_RUNNER,
+      modelDir: PHOSFATE_MODEL_DIR,
+      runsDir: PHOSFATE_RUNS_DIR,
+      runnerExists: fs.existsSync(PHOSFATE_RUNNER),
+      modelExists:
+        fs.existsSync(path.join(PHOSFATE_MODEL_DIR, "metadata.json")) &&
+        fs.existsSync(path.join(PHOSFATE_MODEL_DIR, "mlp_state_dict.pt")),
+    },
     probabilityCsv: {
       path: PROBABILITY_CSV_PATH,
       exists: fs.existsSync(PROBABILITY_CSV_PATH),
@@ -375,6 +709,124 @@ app.get("/api/health", (req, res) => {
       exists: fs.existsSync(ligandFolderPath(ligand)),
     })),
   });
+});
+
+app.post("/api/phosfate/run", async (req, res) => {
+  const stream = wantsPhosFateStream(req);
+
+  if (stream) {
+    res.setHeader("Content-Type", "application/x-ndjson; charset=utf-8");
+    res.setHeader("Cache-Control", "no-cache, no-transform");
+    res.setHeader("X-Accel-Buffering", "no");
+    res.flushHeaders?.();
+  }
+
+  try {
+    const validation = validateProteinSequence(req.body?.sequence);
+
+    if (!validation.ok) {
+      if (stream) {
+        sendErrorEvent(res, new Error(validation.error));
+        return;
+      }
+
+      return res.status(400).json({
+        error: validation.error,
+      });
+    }
+
+    if (!fs.existsSync(PHOSFATE_RUNNER)) {
+      if (stream) {
+        sendErrorEvent(
+          res,
+          new Error("PhosFate runner is missing: " + PHOSFATE_RUNNER),
+        );
+        return;
+      }
+
+      return res.status(500).json({
+        error: "PhosFate runner is missing",
+        path: PHOSFATE_RUNNER,
+      });
+    }
+
+    if (
+      !fs.existsSync(path.join(PHOSFATE_MODEL_DIR, "metadata.json")) ||
+      !fs.existsSync(path.join(PHOSFATE_MODEL_DIR, "mlp_state_dict.pt"))
+    ) {
+      if (stream) {
+        sendErrorEvent(
+          res,
+          new Error("PhosFate model files are missing: " + PHOSFATE_MODEL_DIR),
+        );
+        return;
+      }
+
+      return res.status(500).json({
+        error: "PhosFate model files are missing",
+        path: PHOSFATE_MODEL_DIR,
+      });
+    }
+
+    const jobName = safeJobName(
+      req.body?.jobName ||
+        req.body?.job_name ||
+        "phosfate_" + new Date().toISOString().replace(/[^0-9]/g, "").slice(0, 14),
+    );
+    const topK = Math.max(1, Math.min(10, Number(req.body?.topK || 5)));
+    const distance = Number(req.body?.distance || 5.0);
+
+    if (!Number.isFinite(distance) || distance <= 0 || distance > 20) {
+      if (stream) {
+        sendErrorEvent(
+          res,
+          new Error("Distance cutoff must be a positive number no greater than 20"),
+        );
+        return;
+      }
+
+      return res.status(400).json({
+        error: "Distance cutoff must be a positive number no greater than 20",
+      });
+    }
+
+    if (stream) {
+      sendProgress(res, {
+        stage: "queued",
+        message: "Starting PhosFate inference job.",
+        step: 0,
+        total: 5,
+      });
+    }
+
+    const result = await runPhosFateInference({
+      sequence: validation.sequence,
+      jobName,
+      topK,
+      distance,
+      onProgress: stream ? (event) => sendProgress(res, event) : null,
+    });
+    const payload = formatPhosFateResult(req, result);
+
+    if (stream) {
+      res.write(JSON.stringify({ type: "complete", payload }) + "\n");
+      res.end();
+      return;
+    }
+
+    res.json(payload);
+  } catch (error) {
+    console.error(error);
+    if (stream) {
+      sendErrorEvent(res, error);
+      return;
+    }
+
+    res.status(500).json({
+      error: "Failed to run PhosFate",
+      details: error.message,
+    });
+  }
 });
 
 app.get("/api/binding-sites", (req, res) => {
@@ -515,6 +967,27 @@ app.get("/api/binding-sites/:ligand/:pdbId", (req, res) => {
 app.get(/^\/pockets\/(.+)$/, (req, res) => {
   const requestedPath = req.params[0];
   const filePath = safeJoin(POCKET_PDBS_DIR, requestedPath);
+
+  if (!filePath) {
+    return res.status(400).json({
+      error: "Invalid file path",
+    });
+  }
+
+  if (!fs.existsSync(filePath)) {
+    return res.status(404).json({
+      error: "File not found",
+      path: requestedPath,
+      fullPath: filePath,
+    });
+  }
+
+  res.sendFile(filePath);
+});
+
+app.get(/^\/phosfate-runs\/(.+)$/, (req, res) => {
+  const requestedPath = req.params[0];
+  const filePath = safeJoin(PHOSFATE_RUNS_DIR, requestedPath);
 
   if (!filePath) {
     return res.status(400).json({

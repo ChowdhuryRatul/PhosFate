@@ -1122,6 +1122,26 @@ body.page-phosfate .search-top p {
   line-height: 1.25;
   letter-spacing: 0;
 }
+body.page-phosfate .job-name {
+  min-width: 190px;
+  color: #777;
+  font-size: 12px;
+  font-weight: 900;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+body.page-phosfate .job-name input {
+  width: 100%;
+  display: block;
+  margin-top: 6px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 10px 12px;
+  color: #333;
+  font-size: 14px;
+  font-weight: 800;
+  letter-spacing: 0;
+}
 body.page-phosfate button {
   border: 1px solid #ddd;
   background: white;
@@ -1220,6 +1240,71 @@ body.page-phosfate .primary {
   padding: 17px;
   font-size: 16px;
   margin: 0 0 18px;
+}
+body.page-phosfate .primary:disabled {
+  cursor: progress;
+  opacity: 0.72;
+}
+body.page-phosfate .run-status,
+body.page-phosfate .run-error {
+  border-radius: 12px;
+  padding: 12px 14px;
+  margin: -4px 0 18px;
+  font-size: 14px;
+  font-weight: 800;
+  letter-spacing: 0;
+}
+body.page-phosfate .run-status {
+  display: grid;
+  gap: 4px;
+  border: 1px solid rgba(26, 137, 107, 0.28);
+  background: rgba(26, 137, 107, 0.08);
+  color: #176f5b;
+}
+body.page-phosfate .run-status strong,
+body.page-phosfate .run-status span {
+  display: block;
+}
+body.page-phosfate .run-status span {
+  font-weight: 700;
+}
+body.page-phosfate .run-error {
+  border: 1px solid #f0b5b5;
+  background: #fff6f6;
+  color: #9a2424;
+}
+body.page-phosfate .prediction-picker {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 10px;
+  margin: -4px 0 18px;
+}
+body.page-phosfate .prediction-picker button {
+  min-width: 0;
+  border-radius: 12px;
+  padding: 10px;
+  text-align: left;
+}
+body.page-phosfate .prediction-picker button.active {
+  border-color: var(--blue);
+  box-shadow: 0 0 0 3px rgba(45, 61, 255, 0.12);
+}
+body.page-phosfate .prediction-picker span,
+body.page-phosfate .prediction-picker em {
+  display: block;
+  color: #888;
+  font-size: 11px;
+  font-style: normal;
+  font-weight: 900;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+body.page-phosfate .prediction-picker strong {
+  display: block;
+  margin: 4px 0;
+  color: #333;
+  font-size: 15px;
+  overflow-wrap: anywhere;
 }
 body.page-phosfate .filter-title {
   font-size: 18px;
@@ -1687,6 +1772,7 @@ body.page-phosfate .download-row .gray:disabled {
     white-space: normal;
   }
   body.page-phosfate .filters,
+  body.page-phosfate .prediction-picker,
   body.page-phosfate .download-row {
     grid-template-columns: 1fr;
   }

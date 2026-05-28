@@ -1,0 +1,35 @@
+{
+  "data_path": "/work/ratul1/arunraj/phospred_work/Data_split/multiclass_data_no_SMOTE_0.0",
+  "results_csv": "/work/ratul1/arunraj/phospred_work/scripts/training_runs/results_mlp_BW_hparam_sweep/sweep_metrics.csv",
+  "select_best_by": "val_macro_f1",
+  "best_score": 0.6487923782051603,
+  "best_param_id": "ad8eff57e7b8",
+  "best_params": {
+    "lr": 0.0003,
+    "weight_decay": 0.0001,
+    "dropout": 0.1,
+    "batch_size": 512,
+    "epochs": 200,
+    "patience": 10,
+    "use_bn": false
+  },
+  "use_balanced_weights": true,
+  "seed": 42,
+  "feature_dim": 1280,
+  "n_classes": 5,
+  "architecture": {
+    "hidden_sizes": [
+      512,
+      256,
+      128
+    ]
+  },
+  "class_id_to_name": {
+    "0": "phosphate",
+    "1": "sulfate",
+    "2": "chloride",
+    "3": "nitrate",
+    "4": "carbonate"
+  },
+  "timestamp_saved": "20260320-103259"
+}

@@ -13,11 +13,17 @@ __pycache__/
 .pytest_cache/
 .ipynb_checkpoints/
 node_modules/
+.venv/
+.venv-*/
+.phosfate-cache/
+backend/phosfate_runs/
 
 # Recovered binding-site data is served by the workstation/API, not committed
 # into the frontend bundle.
 frontend/public/data/
 backend/data/
+backend/Pocket_pdbs/
+backend/Pocket_pdbs.zip
 
 # Local backups created during repository maintenance.
 backups/

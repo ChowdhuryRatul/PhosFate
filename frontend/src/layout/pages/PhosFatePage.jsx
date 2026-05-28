@@ -9,7 +9,11 @@ import {
   filenameFromPath,
 } from "../downloads";
 // import { outputControls } from "../homePageData";
-import { getStoredBindingSite, useBindingSites } from "../useBindingSites";
+import {
+  API_BASE,
+  getStoredBindingSite,
+  useBindingSites,
+} from "../useBindingSites";
 
 const anionLabels = [
   { ligand: "Phosphate", label: "PO4", variant: "blue" },
@@ -25,6 +29,9 @@ const outputControls = [
   { key: "phosfate", label: "Show PhosFate re-annotation" },
   { key: "firstShell", label: "Show first-shell residues" },
 ];
+
+const exampleSequence =
+  "MSKVCIIAWVYGRVQGVGFRYTTQYEAKRLGLTGYAKNLDDGSVEVVACGEEGQVEKLMQWLKSGGPRSARVERVLSEPHHPSGELTDFRIRLEHHHHHH";
 
 function toBarValue(value) {
   const rounded = Math.max(0, Math.min(1, value));
@@ -146,10 +153,38 @@ function formatPocketDisplayName(value) {
   return `${pdbId.toUpperCase()}_Chain-${chain.toUpperCase()} (Site: ${site})`;
 }
 
+const runStageLabels = {
+  queued: "Queued",
+  esmfold_download: "Downloading ESMFold",
+  folding: "Folding",
+  fpocket: "Running fpocket",
+  embedding_model: "Loading ESM2",
+  embedding: "Embedding",
+  scoring: "Scoring",
+};
+
+function formatRunProgress(event) {
+  const label = runStageLabels[event?.stage] || "Running";
+  const count =
+    event?.step && event?.total ? ` ${event.step}/${event.total}` : "";
+
+  return {
+    stage: label + count,
+    message: event?.message || "Running PhosFate...",
+  };
+}
+
 export default function PhosFatePage({ setPage }) {
   const { manifest, sites } = useBindingSites();
-  const [storedSite, setStoredSite] = useState(() => getStoredBindingSite());
-  const [queryOverride, setQueryOverride] = useState(null);
+  const [storedSite] = useState(() => getStoredBindingSite());
+  const [queryOverride, setQueryOverride] = useState(exampleSequence);
+  const [jobName, setJobName] = useState("9SV1_1");
+  const [phosFateResult, setPhosFateResult] = useState(null);
+  const [selectedPredictionIndex, setSelectedPredictionIndex] = useState(0);
+  const [runStatus, setRunStatus] = useState("");
+  const [runProgress, setRunProgress] = useState(null);
+  const [runError, setRunError] = useState("");
+  const [isRunning, setIsRunning] = useState(false);
   const [downloadType, setDownloadType] = useState("csv");
   const [visibleOutputs, setVisibleOutputs] = useState({
     viewer: true,
@@ -171,6 +206,11 @@ export default function PhosFatePage({ setPage }) {
     );
   }, [sites, storedSite]);
 
+  const activeSite =
+    phosFateResult?.pockets?.[selectedPredictionIndex] ??
+    phosFateResult?.selectedSite ??
+    selectedSite;
+
   const query = useMemo(() => {
     if (queryOverride !== null) {
       return queryOverride;
@@ -190,35 +230,138 @@ export default function PhosFatePage({ setPage }) {
   }, [queryOverride, selectedSite]);
 
   const ligandSummary = useMemo(
-    () =>
-      manifest?.ligands?.find((item) => item.ligand === selectedSite?.ligand),
-    [manifest, selectedSite],
+    () => manifest?.ligands?.find((item) => item.ligand === activeSite?.ligand),
+    [manifest, activeSite],
   );
   const pdbAnnotationBars = useMemo(
-    () => buildPdbAnnotationBars(selectedSite),
-    [selectedSite],
+    () => buildPdbAnnotationBars(activeSite),
+    [activeSite],
   );
   const phosFatePredictionBars = useMemo(
-    () => buildPhosFatePredictionBars(selectedSite),
-    [selectedSite],
+    () => buildPhosFatePredictionBars(activeSite),
+    [activeSite],
   );
-  const selectedPdbFile = filenameFromPath(selectedSite?.pdbPath);
+  const selectedPdbFile = filenameFromPath(activeSite?.pdbPath);
   const downloadSelectedSite = () => {
-    if (!selectedSite) {
+    if (!activeSite) {
       return;
     }
 
     if (downloadType === "json") {
-      downloadSitesJson([selectedSite], selectedSite.id + ".json");
+      downloadSitesJson([activeSite], activeSite.id + ".json");
       return;
     }
 
     if (downloadType === "pdb") {
-      downloadFile(selectedSite.pdbPath);
+      downloadFile(activeSite.pdbPath);
       return;
     }
 
-    downloadSitesCsv([selectedSite], selectedSite.id + ".csv");
+    downloadSitesCsv([activeSite], activeSite.id + ".csv");
+  };
+
+  const runPhosFate = async () => {
+    const sequence = String(queryOverride || "").replace(/\s+/g, "").toUpperCase();
+
+    setRunError("");
+    setRunStatus("");
+    setRunProgress(null);
+
+    if (!sequence) {
+      setRunError("Protein sequence is required.");
+      return;
+    }
+
+    setIsRunning(true);
+    setRunStatus("Starting PhosFate inference...");
+
+    try {
+      const response = await fetch(API_BASE + "/api/phosfate/run?stream=1", {
+        method: "POST",
+        headers: {
+          Accept: "application/x-ndjson",
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          jobName,
+          sequence,
+          topK: 5,
+          distance: 5.0,
+        }),
+      });
+
+      if (!response.ok) {
+        const data = await response.json().catch(() => ({}));
+        throw new Error(data.details || data.error || "PhosFate run failed.");
+      }
+
+      const reader = response.body?.getReader();
+
+      if (!reader) {
+        throw new Error("Browser does not support PhosFate progress streaming.");
+      }
+
+      const decoder = new TextDecoder();
+      let buffer = "";
+      let finalPayload = null;
+
+      while (true) {
+        const { value, done } = await reader.read();
+        buffer += decoder.decode(value || new Uint8Array(), { stream: !done });
+
+        const lines = buffer.split(/\r?\n/);
+        buffer = lines.pop() || "";
+
+        for (const line of lines) {
+          if (!line.trim()) {
+            continue;
+          }
+
+          const event = JSON.parse(line);
+
+          if (event.type === "progress") {
+            const progress = formatRunProgress(event);
+            setRunProgress(progress);
+            setRunStatus(progress.message);
+          } else if (event.type === "complete") {
+            finalPayload = event.payload;
+          } else if (event.type === "error") {
+            throw new Error(event.details || event.error || "PhosFate run failed.");
+          }
+        }
+
+        if (done) {
+          break;
+        }
+      }
+
+      if (!finalPayload) {
+        throw new Error("PhosFate run ended without a result.");
+      }
+
+      setPhosFateResult(finalPayload);
+      setSelectedPredictionIndex(0);
+      setRunStatus(
+        "Completed " +
+          (finalPayload.pockets?.length ?? 0) +
+          " pocket predictions for " +
+          finalPayload.jobName +
+          ".",
+      );
+      setRunProgress({
+        stage: "Complete",
+        message:
+          "Completed " +
+          (finalPayload.pockets?.length ?? 0) +
+          " pocket predictions.",
+      });
+    } catch (error) {
+      setRunError(error.message || String(error));
+      setRunStatus("");
+      setRunProgress(null);
+    } finally {
+      setIsRunning(false);
+    }
   };
 
   return (
@@ -231,9 +374,9 @@ export default function PhosFatePage({ setPage }) {
             <div>
               <h2>PhosFate pocket query</h2>
               <div className="sub">
-                Enter a PDB ID, chain, residue range, or upload a pocket file.
-                PhosFate compares the crystallographic anion annotation with
-                re-annotated binding probabilities across five anions.
+                Enter a protein sequence. PhosFate predicts the structure,
+                detects pockets, and scores anion-binding probabilities across
+                five classes.
               </div>
             </div>
           </div>
@@ -241,19 +384,25 @@ export default function PhosFatePage({ setPage }) {
           <div className="card">
             <div className="search-top">
               <div>
-                <h3>Search or upload a pocket</h3>
+                <h3>Run a sequence through PhosFate</h3>
                 <p>
-                  Example: 1TQN chain A pocket around PO₄³⁻. The query loads the
-                  interactive 3D structure and predicted anion preference
-                  distribution.
+                  The run creates a predicted structure, detects candidate
+                  pockets, and returns a probability distribution for each
+                  pocket.
                 </p>
               </div>
-              <button type="button">Upload PDB</button>
+              <label className="job-name">
+                Job name
+                <input
+                  onChange={(event) => setJobName(event.target.value)}
+                  value={jobName}
+                />
+              </label>
             </div>
             <div className="query-field">
               <textarea
                 onChange={(event) => setQueryOverride(event.target.value)}
-                placeholder="Enter PDB ID, chain, ligand, residue list, or paste pocket coordinates..."
+                placeholder="Paste a protein sequence using one-letter amino acid codes..."
                 value={query}
               />
               <div className="querybar">
@@ -264,16 +413,22 @@ export default function PhosFatePage({ setPage }) {
                   <button
                     type="button"
                     onClick={() => {
-                      setStoredSite(
-                        sites.find((site) => site.ligand === "Phosphate") ??
-                          selectedSite,
-                      );
-                      setQueryOverride(null);
+                      setQueryOverride(exampleSequence);
+                      setJobName("9SV1_1");
                     }}
                   >
-                    Example pocket
+                    Example sequence
                   </button>
-                  <button type="button" onClick={() => setQueryOverride("")}>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setQueryOverride("");
+                      setPhosFateResult(null);
+                      setSelectedPredictionIndex(0);
+                      setRunStatus("");
+                      setRunError("");
+                    }}
+                  >
                     Clear
                   </button>
                 </div>
@@ -284,17 +439,50 @@ export default function PhosFatePage({ setPage }) {
                 RECOVERED SITES<strong>{manifest?.totalSites ?? "..."}</strong>
               </div>
               <div className="stat">
-                ACTIVE ANION<strong>{selectedSite?.ligand ?? "..."}</strong>
+                ACTIVE ANION<strong>{activeSite?.ligand ?? "..."}</strong>
               </div>
               <div className="stat">
-                MODE<strong>Use recovered data</strong>
+                MODE
+                <strong>
+                  {phosFateResult ? "Inference result" : "Recovered data"}
+                </strong>
               </div>
             </div>
           </div>
 
-          <button className="primary" type="button">
-            Run PhosFate
+          <button
+            className="primary"
+            disabled={isRunning}
+            onClick={runPhosFate}
+            type="button"
+          >
+            {isRunning ? "Running PhosFate..." : "Run PhosFate"}
           </button>
+
+          {runStatus ? (
+            <div className="run-status">
+              {runProgress?.stage ? <strong>{runProgress.stage}</strong> : null}
+              <span>{runStatus}</span>
+            </div>
+          ) : null}
+          {runError ? <div className="run-error">{runError}</div> : null}
+
+          {phosFateResult?.pockets?.length ? (
+            <div className="prediction-picker">
+              {phosFateResult.pockets.map((pocket, index) => (
+                <button
+                  className={index === selectedPredictionIndex ? "active" : ""}
+                  key={pocket.id}
+                  onClick={() => setSelectedPredictionIndex(index)}
+                  type="button"
+                >
+                  <span>Pocket {pocket.rank}</span>
+                  <strong>{pocket.ligand}</strong>
+                  <em>{Math.round((pocket.confidence ?? 0) * 100)}%</em>
+                </button>
+              ))}
+            </div>
+          ) : null}
 
           <div className="card">
             <p className="filter-title">
@@ -326,8 +514,8 @@ export default function PhosFatePage({ setPage }) {
             <div>
               <h2>Queried pocket</h2>
               <div className="sub">
-                3D structure, original PDB anion label, and PhosFate
-                probability-based re-annotation.
+                3D structure, detected pocket residues, and PhosFate
+                probability distribution.
               </div>
             </div>
           </div>
@@ -335,25 +523,25 @@ export default function PhosFatePage({ setPage }) {
           <div className="viewer-card">
             <div className="viewer-top">
               <div>Sequence of</div>
-              <div>{selectedSite?.pdbId ?? "..."}</div>
+              <div>{activeSite?.pdbId ?? "..."}</div>
               <div>
-                {selectedSite
-                  ? selectedSite.ligand + " binding site " + selectedSite.site
+                {activeSite
+                  ? activeSite.ligand + " binding site " + activeSite.site
                   : "Recovered Distance-5.0 pocket"}
               </div>
-              <div>Chain {selectedSite?.chain ?? "..."}</div>
+              <div>Chain {activeSite?.chain ?? "..."}</div>
             </div>
             <div className="seq">
-              {selectedSite ? (
+              {activeSite ? (
                 <>
                   Residue indices:{" "}
-                  {Array.isArray(selectedSite.residueIndices) &&
-                  selectedSite.residueIndices.length > 0
-                    ? selectedSite.residueIndices
+                  {Array.isArray(activeSite.residueIndices) &&
+                  activeSite.residueIndices.length > 0
+                    ? activeSite.residueIndices
                         .slice(
                           0,
                           visibleOutputs.firstShell
-                            ? selectedSite.residueIndices.length
+                            ? activeSite.residueIndices.length
                             : 6,
                         )
                         .join(", ")
@@ -365,47 +553,63 @@ export default function PhosFatePage({ setPage }) {
 
               <br />
 
-              {selectedSite
-                ? formatPocketDisplayName(selectedPdbFile)
+              {activeSite
+                ? phosFateResult
+                  ? activeSite.id
+                  : formatPocketDisplayName(selectedPdbFile)
                 : "<site>.pdb"}
               <br />
             </div>
             {visibleOutputs.viewer ? (
               <StructureViewer
-                label={selectedSite?.id}
-                pdbId={selectedSite?.pdbId}
-                structurePath={selectedSite?.pdbPath}
+                label={activeSite?.id}
+                pdbId={phosFateResult ? null : activeSite?.pdbId}
+                structurePath={activeSite?.pdbPath}
                 showResidueLabels={visibleOutputs.firstShell}
               />
             ) : null}
           </div>
 
-          {selectedSite ? (
+          {activeSite ? (
             <div className="site-detail-card">
               <div>
-                <span>Selected recovered pocket</span>
+                <span>
+                  {phosFateResult
+                    ? "Selected PhosFate prediction"
+                    : "Selected recovered pocket"}
+                </span>
                 <strong>
-                  {selectedSite
-                    ? formatPocketDisplayName(selectedPdbFile)
+                  {activeSite
+                    ? phosFateResult
+                      ? activeSite.id
+                      : formatPocketDisplayName(selectedPdbFile)
                     : "<site>.pdb"}
                 </strong>
               </div>
               <dl>
                 <div>
                   <dt>Ligand</dt>
-                  <dd>{selectedSite.ligand}</dd>
+                  <dd>{activeSite.ligand}</dd>
                 </div>
                 <div>
-                  <dt>PDB folder</dt>
-                  <dd>{selectedSite.pdbId}</dd>
+                  <dt>{phosFateResult ? "Confidence" : "PDB folder"}</dt>
+                  <dd>
+                    {phosFateResult
+                      ? Math.round((activeSite.confidence ?? 0) * 100) + "%"
+                      : activeSite.pdbId}
+                  </dd>
                 </div>
                 <div>
                   <dt>Residues</dt>
-                  <dd>{selectedSite.residueCount}</dd>
+                  <dd>{activeSite.residueCount}</dd>
                 </div>
                 <div>
-                  <dt>Ligand set</dt>
-                  <dd>{ligandSummary?.siteCount ?? 0} usable sites</dd>
+                  <dt>{phosFateResult ? "fpocket" : "Ligand set"}</dt>
+                  <dd>
+                    {phosFateResult
+                      ? "Pocket " + activeSite.fpocketId
+                      : (ligandSummary?.siteCount ?? 0) + " usable sites"}
+                  </dd>
                 </div>
               </dl>
             </div>
@@ -442,7 +646,7 @@ export default function PhosFatePage({ setPage }) {
               </select>
               <button
                 className="gray"
-                disabled={!selectedSite}
+                disabled={!activeSite}
                 onClick={downloadSelectedSite}
                 type="button"
               >
