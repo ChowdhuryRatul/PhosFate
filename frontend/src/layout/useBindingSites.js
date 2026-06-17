@@ -55,14 +55,60 @@ function normalizeSite(site) {
   };
 }
 
-export function useBindingSites() {
+function buildBindingSitesUrl({
+  query = "",
+  ligands = [],
+  page = 0,
+  pageSize = 25,
+  fields = "",
+} = {}) {
+  const params = new URLSearchParams();
+  const wantsAll = pageSize === "all";
+
+  params.set("limit", String(pageSize));
+  params.set("offset", wantsAll ? "0" : String(Math.max(0, page) * pageSize));
+
+  const normalizedQuery = query.trim();
+  if (normalizedQuery) {
+    params.set("q", normalizedQuery);
+  }
+
+  if (ligands.length) {
+    params.set("ligand", ligands.join(","));
+  }
+
+  if (fields) {
+    params.set("fields", fields);
+  }
+
+  return `${API_BASE}/api/binding-sites?${params}`;
+}
+
+export function useBindingSites(options = {}) {
+  const {
+    query = "",
+    ligands = [],
+    page = 0,
+    pageSize = 25,
+  } = options;
   const [manifest, setManifest] = useState(null);
   const [error, setError] = useState("");
+  const ligandsKey = useMemo(() => ligands.join(","), [ligands]);
+  const requestUrl = useMemo(
+    () =>
+      buildBindingSitesUrl({
+        query,
+        ligands: ligandsKey ? ligandsKey.split(",") : [],
+        page,
+        pageSize,
+      }),
+    [ligandsKey, page, pageSize, query],
+  );
 
   useEffect(() => {
     let cancelled = false;
 
-    fetch(`${API_BASE}/api/binding-sites`)
+    fetch(requestUrl)
       .then((response) => {
         if (!response.ok) {
           throw new Error("Could not load binding sites from backend");
@@ -84,7 +130,7 @@ export function useBindingSites() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [requestUrl]);
 
   const sites = useMemo(() => manifest?.sites ?? [], [manifest]);
 
@@ -93,7 +139,27 @@ export function useBindingSites() {
     isLoading: !manifest && !error,
     manifest,
     sites,
+    totalSites: manifest?.totalSites ?? 0,
   };
+}
+
+export async function fetchBindingSitePaths({ query = "", ligands = [] } = {}) {
+  const response = await fetch(
+    buildBindingSitesUrl({
+      query,
+      ligands,
+      page: 0,
+      pageSize: "all",
+      fields: "pdbPath",
+    }),
+  );
+
+  if (!response.ok) {
+    throw new Error("Could not load PDB download list from backend");
+  }
+
+  const data = await response.json();
+  return onlyAvailableLigands(data).sites;
 }
 
 export async function fetchBindingSite(site) {

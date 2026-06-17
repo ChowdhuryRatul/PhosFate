@@ -40,6 +40,10 @@ let probabilityCache = {
   mtimeMs: null,
   map: new Map(),
 };
+let bindingSiteCache = {
+  signature: "",
+  manifest: null,
+};
 
 // New ligand folders
 const LIGAND_FOLDERS = {
@@ -577,7 +581,7 @@ function getProbabilityForSite(pdbId, chain) {
   return probabilityMap.get(key) || null;
 }
 
-function buildSiteRecord({ req, ligand, pdbFilePath }) {
+function buildSiteIndexRecord({ ligand, pdbFilePath }) {
   const file = path.basename(pdbFilePath);
   const parsed = parseSitePdbFile(file);
 
@@ -588,8 +592,6 @@ function buildSiteRecord({ req, ligand, pdbFilePath }) {
   const residueFile = file.replace(".pdb", "_residue_indices.txt");
   const residueFilePath = path.join(path.dirname(pdbFilePath), residueFile);
 
-  const residueIndices = readResidueIndices(residueFilePath);
-  const apiBase = getApiBase(req);
   const phosFateScores = getProbabilityForSite(parsed.pdbId, parsed.chain);
 
   const relativePdbSubPath = getRelativePocketPath(pdbFilePath);
@@ -608,17 +610,8 @@ function buildSiteRecord({ req, ligand, pdbFilePath }) {
     pdbFile: file,
     residueFile,
 
-    // Absolute URL for StructureViewer
-    pdbPath: `${apiBase}${relativePdbPath}`,
-    residuePath: `${apiBase}${relativeResiduePath}`,
-    pdbUrl: `${apiBase}${relativePdbPath}`,
-    residueUrl: `${apiBase}${relativeResiduePath}`,
-
     relativePdbPath,
     relativeResiduePath,
-
-    residueCount: residueIndices.length,
-    residueIndices,
 
     phosFateScores,
     predictionScores: phosFateScores,
@@ -629,7 +622,44 @@ function buildSiteRecord({ req, ligand, pdbFilePath }) {
   };
 }
 
-function scanLigandSites(req, ligand) {
+function hydrateSiteRecord(req, site, { includeResidues = false } = {}) {
+  const apiBase = getApiBase(req);
+  const residueFilePath = safeJoin(
+    POCKET_PDBS_DIR,
+    site.relativeResiduePath.replace(/^\/pockets\//, ""),
+  );
+  const residueIndices = includeResidues
+    ? readResidueIndices(residueFilePath)
+    : [];
+
+  return {
+    ...site,
+
+    // Absolute URL for StructureViewer and browser downloads.
+    pdbPath: `${apiBase}${site.relativePdbPath}`,
+    residuePath: `${apiBase}${site.relativeResiduePath}`,
+    pdbUrl: `${apiBase}${site.relativePdbPath}`,
+    residueUrl: `${apiBase}${site.relativeResiduePath}`,
+
+    residueCount: includeResidues ? residueIndices.length : site.residueCount,
+    residueIndices,
+  };
+}
+
+function getBindingSiteSignature() {
+  return ALLOWED_LIGANDS.map((ligand) => {
+    const folderPath = ligandFolderPath(ligand);
+
+    if (!folderPath || !fs.existsSync(folderPath)) {
+      return `${ligand}:missing`;
+    }
+
+    const stat = fs.statSync(folderPath);
+    return `${ligand}:${stat.mtimeMs}:${stat.size}`;
+  }).join("|");
+}
+
+function scanLigandSites(ligand) {
   const folderPath = ligandFolderPath(ligand);
 
   if (!folderPath || !fs.existsSync(folderPath)) {
@@ -649,8 +679,7 @@ function scanLigandSites(req, ligand) {
 
   const sites = pdbFiles
     .map((pdbFilePath) =>
-      buildSiteRecord({
-        req,
+      buildSiteIndexRecord({
         ligand,
         pdbFilePath,
       }),
@@ -666,12 +695,12 @@ function scanLigandSites(req, ligand) {
   };
 }
 
-function scanAllSites(req) {
+function scanAllSites() {
   const allSites = [];
   const ligands = [];
 
   for (const ligand of ALLOWED_LIGANDS) {
-    const result = scanLigandSites(req, ligand);
+    const result = scanLigandSites(ligand);
 
     allSites.push(...result.sites);
 
@@ -689,7 +718,99 @@ function scanAllSites(req) {
   };
 }
 
+function getBindingSiteManifest() {
+  const signature = getBindingSiteSignature();
+
+  if (bindingSiteCache.signature === signature && bindingSiteCache.manifest) {
+    return bindingSiteCache.manifest;
+  }
+
+  const manifest = scanAllSites();
+  bindingSiteCache = {
+    signature,
+    manifest,
+  };
+
+  console.log(`Indexed ${manifest.totalSites} binding sites`);
+  return manifest;
+}
+
+function parsePositiveInteger(value, fallback) {
+  const numberValue = Number(value);
+  return Number.isFinite(numberValue) && numberValue > 0
+    ? Math.floor(numberValue)
+    : fallback;
+}
+
+function parseLigandFilter(value) {
+  const values = Array.isArray(value) ? value : String(value || "").split(",");
+  const ligands = values.map(normalizeLigand).filter((ligand) =>
+    ALLOWED_LIGANDS.includes(ligand),
+  );
+
+  return new Set(ligands);
+}
+
+function siteMatchesQuery(site, query) {
+  const normalizedQuery = String(query || "")
+    .trim()
+    .toLowerCase();
+
+  if (!normalizedQuery) {
+    return true;
+  }
+
+  return [
+    site.id,
+    site.ligand,
+    site.pdbId,
+    site.chain,
+    String(site.site),
+    site.pdbFile,
+  ]
+    .join(" ")
+    .toLowerCase()
+    .includes(normalizedQuery);
+}
+
+function filterBindingSites(sites, query) {
+  const ligandFilter = parseLigandFilter(query.ligand);
+  let filteredSites = sites;
+
+  if (ligandFilter.size) {
+    filteredSites = filteredSites.filter((site) => ligandFilter.has(site.ligand));
+  }
+
+  if (query.pdbId) {
+    const normalizedPdbId = String(query.pdbId).toUpperCase();
+    filteredSites = filteredSites.filter(
+      (site) => site.pdbId.toUpperCase() === normalizedPdbId,
+    );
+  }
+
+  if (query.chain) {
+    const normalizedChain = String(query.chain).toUpperCase();
+    filteredSites = filteredSites.filter(
+      (site) => site.chain.toUpperCase() === normalizedChain,
+    );
+  }
+
+  if (query.site) {
+    filteredSites = filteredSites.filter(
+      (site) => String(site.site) === String(query.site),
+    );
+  }
+
+  if (query.q) {
+    filteredSites = filteredSites.filter((site) => siteMatchesQuery(site, query.q));
+  }
+
+  return filteredSites;
+}
+
 app.get("/api/health", (req, res) => {
+  const manifest = getBindingSiteManifest();
+
   res.json({
     ok: true,
     message: "PhosFate workstation API is running",
@@ -714,6 +835,10 @@ app.get("/api/health", (req, res) => {
       folder: LIGAND_FOLDERS[ligand],
       exists: fs.existsSync(ligandFolderPath(ligand)),
     })),
+    bindingSites: {
+      indexedSites: manifest.totalSites,
+      ligands: manifest.ligands,
+    },
   });
 });
 
@@ -843,38 +968,52 @@ app.post("/api/phosfate/run", async (req, res) => {
 
 app.get("/api/binding-sites", (req, res) => {
   try {
-    const { ligand, pdbId, chain, site } = req.query;
+    const manifest = getBindingSiteManifest();
+    const filteredSites = filterBindingSites(manifest.sites, req.query);
+    const wantsAll = req.query.limit === "all";
+    const hasPaging =
+      wantsAll ||
+      req.query.limit !== undefined ||
+      req.query.offset !== undefined ||
+      req.query.q !== undefined;
+    const includeResidues =
+      req.query.includeResidues === "1" ||
+      req.query.includeResidues === "true" ||
+      !hasPaging;
+    const limit = wantsAll
+      ? filteredSites.length
+      : Math.min(parsePositiveInteger(req.query.limit, filteredSites.length), 500);
+    const offset = Math.max(0, parsePositiveInteger(req.query.offset, 0));
+    const pageSites = hasPaging
+      ? filteredSites.slice(offset, offset + limit)
+      : filteredSites;
+    const fields = String(req.query.fields || "");
+    const sites =
+      fields === "pdbPath"
+        ? pageSites.map((site) =>
+            hydrateSiteRecord(req, site, { includeResidues: false }),
+          ).map((site) => ({
+            id: site.id,
+            ligand: site.ligand,
+            pdbId: site.pdbId,
+            chain: site.chain,
+            site: site.site,
+            pdbPath: site.pdbPath,
+            pdbUrl: site.pdbUrl,
+            relativePdbPath: site.relativePdbPath,
+          }))
+        : pageSites.map((site) =>
+            hydrateSiteRecord(req, site, { includeResidues }),
+          );
 
-    const manifest = scanAllSites(req);
-    let sites = manifest.sites;
-
-    if (ligand) {
-      const normalizedLigand = normalizeLigand(ligand);
-      sites = sites.filter((item) => item.ligand === normalizedLigand);
-    }
-
-    if (pdbId) {
-      const normalizedPdbId = String(pdbId).toUpperCase();
-      sites = sites.filter(
-        (item) => item.pdbId.toUpperCase() === normalizedPdbId,
-      );
-    }
-
-    if (chain) {
-      const normalizedChain = String(chain).toUpperCase();
-      sites = sites.filter(
-        (item) => item.chain.toUpperCase() === normalizedChain,
-      );
-    }
-
-    if (site) {
-      sites = sites.filter((item) => String(item.site) === String(site));
-    }
-
+    res.setHeader("Cache-Control", "public, max-age=60");
     res.json({
       ligands: manifest.ligands,
       sites,
-      totalSites: sites.length,
+      totalSites: filteredSites.length,
+      offset: hasPaging ? offset : 0,
+      limit: hasPaging ? limit : sites.length,
+      returnedSites: sites.length,
     });
   } catch (error) {
     console.error(error);
@@ -901,9 +1040,12 @@ app.get("/api/binding-site", (req, res) => {
     const normalizedPdbId = String(pdbId).toUpperCase();
     const normalizedChain = String(chain).toUpperCase();
 
-    const result = scanLigandSites(req, normalizedLigand);
+    const manifest = getBindingSiteManifest();
+    const ligandSites = manifest.sites.filter(
+      (item) => item.ligand === normalizedLigand,
+    );
 
-    const matchedSite = result.sites.find((item) => {
+    const matchedSite = ligandSites.find((item) => {
       const pdbMatches = item.pdbId.toUpperCase() === normalizedPdbId;
       const chainMatches = item.chain.toUpperCase() === normalizedChain;
       const siteMatches = site ? String(item.site) === String(site) : true;
@@ -920,7 +1062,7 @@ app.get("/api/binding-site", (req, res) => {
           chain: normalizedChain,
           site: site || null,
         },
-        availableSites: result.sites
+        availableSites: ligandSites
           .filter((item) => item.pdbId.toUpperCase() === normalizedPdbId)
           .map((item) => ({
             id: item.id,
@@ -931,7 +1073,7 @@ app.get("/api/binding-site", (req, res) => {
       });
     }
 
-    res.json(matchedSite);
+    res.json(hydrateSiteRecord(req, matchedSite, { includeResidues: true }));
   } catch (error) {
     console.error(error);
     res.status(500).json({
@@ -946,11 +1088,11 @@ app.get("/api/binding-sites/:ligand/:pdbId", (req, res) => {
     const ligand = normalizeLigand(req.params.ligand);
     const pdbId = String(req.params.pdbId || "").toUpperCase();
 
-    const result = scanLigandSites(req, ligand);
-
-    const sites = result.sites.filter(
-      (item) => item.pdbId.toUpperCase() === pdbId,
-    );
+    const manifest = getBindingSiteManifest();
+    const sites = manifest.sites
+      .filter((item) => item.ligand === ligand)
+      .filter((item) => item.pdbId.toUpperCase() === pdbId)
+      .map((site) => hydrateSiteRecord(req, site, { includeResidues: true }));
 
     if (!sites.length) {
       return res.status(404).json({

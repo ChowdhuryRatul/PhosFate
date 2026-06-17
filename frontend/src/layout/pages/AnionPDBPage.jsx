@@ -4,112 +4,62 @@ import { downloadFile, downloadPdbTar, downloadPdbZip } from "../downloads";
 import { anionFilters } from "../homePageData";
 import {
   AVAILABLE_LIGANDS,
+  fetchBindingSite,
+  fetchBindingSitePaths,
   storeBindingSite,
   useBindingSites,
 } from "../useBindingSites";
 
 const formatCount = (count) => new Intl.NumberFormat("en-US").format(count);
 
-function formatPocketDisplayName(value) {
-  const filename = String(value ?? "")
-    .split("/")
-    .pop();
-
-  const match = filename.match(
-    /^([A-Za-z0-9]+)_chain-([A-Za-z0-9]+)_site-([0-9]+)\.pdb$/i,
-  );
-
-  if (!match) {
-    return filename.replace(/\.pdb$/i, "");
-  }
-
-  const [, pdbId, chain, site] = match;
-
-  return `${pdbId.toUpperCase()}_Chain-${chain.toUpperCase()} (Site: ${site})`;
-}
-
 export default function AnionPDBPage({ setPage }) {
-  const { error, isLoading, manifest, sites } = useBindingSites();
   const [query, setQuery] = useState("");
   const [currentPage, setCurrentPage] = useState(0);
   const [pageSize, setPageSize] = useState(25);
-  const [selectedSiteIds, setSelectedSiteIds] = useState(() => new Set());
+  const [selectedSitesById, setSelectedSitesById] = useState(() => new Map());
   const [downloadError, setDownloadError] = useState("");
   const [isPreparingDownload, setIsPreparingDownload] = useState(false);
   const [activeLigands, setActiveLigands] = useState(
     () => new Set(AVAILABLE_LIGANDS),
   );
+  const activeLigandList = useMemo(
+    () => Array.from(activeLigands).sort(),
+    [activeLigands],
+  );
+  const { error, isLoading, manifest, sites, totalSites } = useBindingSites({
+    query,
+    ligands: activeLigandList,
+    page: currentPage,
+    pageSize,
+  });
 
   const openPhosFate = (event) => {
     event.preventDefault();
     setPage("phosfate");
   };
 
-  const filteredSites = useMemo(() => {
-    const normalizedQuery = query.trim().toLowerCase();
-
-    return sites.filter((site) => {
-      const ligandMatches = activeLigands.has(site.ligand);
-      if (!ligandMatches) {
-        return false;
-      }
-
-      if (!normalizedQuery) {
-        return true;
-      }
-
-      return [
-        site.id,
-        site.ligand,
-        site.pdbId,
-        site.chain,
-        String(site.site),
-        site.residueIndices.join(" "),
-      ]
-        .join(" ")
-        .toLowerCase()
-        .includes(normalizedQuery);
-    });
-  }, [activeLigands, query, sites]);
-
-  const recoveredResultCount = useMemo(() => {
-    const ligands = manifest?.ligands ?? [];
-    return ligands.reduce((total, ligand) => {
-      if (!activeLigands.has(ligand.ligand)) {
-        return total;
-      }
-
-      return total + (ligand.recoveredSiteCount ?? ligand.siteCount ?? 0);
-    }, 0);
-  }, [activeLigands, manifest]);
   const hasQuery = Boolean(query.trim());
-  const resultCount =
-    hasQuery || !recoveredResultCount
-      ? filteredSites.length
-      : recoveredResultCount;
+  const resultCount = totalSites;
   const resultCountLabel = hasQuery
-    ? "indexed binding-site records"
+    ? "matching binding-site records"
     : "recovered binding-site records";
 
-  const totalPages = Math.max(1, Math.ceil(filteredSites.length / pageSize));
+  const totalPages = Math.max(1, Math.ceil(totalSites / pageSize));
   const safeCurrentPage = Math.min(currentPage, totalPages - 1);
-  const visibleSites = filteredSites.slice(
-    safeCurrentPage * pageSize,
-    safeCurrentPage * pageSize + pageSize,
-  );
+  const visibleSites = sites;
   const canGoBack = safeCurrentPage > 0;
   const canGoForward = safeCurrentPage < totalPages - 1;
+  const selectedSiteIds = useMemo(
+    () => new Set(selectedSitesById.keys()),
+    [selectedSitesById],
+  );
   const selectedSites = useMemo(
-    () => filteredSites.filter((site) => selectedSiteIds.has(site.id)),
-    [filteredSites, selectedSiteIds],
+    () => Array.from(selectedSitesById.values()),
+    [selectedSitesById],
   );
   const allVisibleSitesSelected =
     visibleSites.length > 0 &&
     visibleSites.every((site) => selectedSiteIds.has(site.id));
-  const filteredPdbPaths = useMemo(
-    () => filteredSites.map((site) => site.pdbPath).filter(Boolean),
-    [filteredSites],
-  );
 
   const updateQuery = (value) => {
     setQuery(value);
@@ -133,41 +83,45 @@ export default function AnionPDBPage({ setPage }) {
     });
   };
 
-  const toggleSelectedSite = (siteId) => {
-    setSelectedSiteIds((currentSiteIds) => {
-      const nextSiteIds = new Set(currentSiteIds);
+  const toggleSelectedSite = (site) => {
+    setSelectedSitesById((currentSitesById) => {
+      const nextSitesById = new Map(currentSitesById);
 
-      if (nextSiteIds.has(siteId)) {
-        nextSiteIds.delete(siteId);
+      if (nextSitesById.has(site.id)) {
+        nextSitesById.delete(site.id);
       } else {
-        nextSiteIds.add(siteId);
+        nextSitesById.set(site.id, site);
       }
 
-      return nextSiteIds;
+      return nextSitesById;
     });
   };
 
   const toggleVisibleSites = () => {
-    setSelectedSiteIds((currentSiteIds) => {
-      const nextSiteIds = new Set(currentSiteIds);
+    setSelectedSitesById((currentSitesById) => {
+      const nextSitesById = new Map(currentSitesById);
 
       if (allVisibleSitesSelected) {
-        visibleSites.forEach((site) => nextSiteIds.delete(site.id));
+        visibleSites.forEach((site) => nextSitesById.delete(site.id));
       } else {
-        visibleSites.forEach((site) => nextSiteIds.add(site.id));
+        visibleSites.forEach((site) => nextSitesById.set(site.id, site));
       }
 
-      return nextSiteIds;
+      return nextSitesById;
     });
   };
 
-  const selectForPhosFate = (site) => {
-    storeBindingSite(site);
+  const selectForPhosFate = async (site) => {
+    try {
+      storeBindingSite(await fetchBindingSite(site));
+    } catch {
+      storeBindingSite(site);
+    }
     setPage("phosfate");
   };
 
   const downloadSelectedPdbFiles = async () => {
-    if (!selectedSites.length && !filteredPdbPaths.length) {
+    if (!selectedSites.length && !totalSites) {
       return;
     }
 
@@ -178,6 +132,14 @@ export default function AnionPDBPage({ setPage }) {
       if (selectedSites.length) {
         await downloadPdbZip(selectedSites, "anionpdb-selected-pdb-files.zip");
       } else {
+        const downloadSites = await fetchBindingSitePaths({
+          query,
+          ligands: activeLigandList,
+        });
+        const filteredPdbPaths = downloadSites
+          .map((site) => site.pdbPath)
+          .filter(Boolean);
+
         await downloadPdbTar(
           filteredPdbPaths,
           "anionpdb-filtered-pdb-files.tar",
@@ -389,8 +351,13 @@ export default function AnionPDBPage({ setPage }) {
                         </strong>
                       </b>
                       <small>
-                        chain {site.chain} · site {site.site} · residues{" "}
-                        {site.residueIndices.slice(0, 6).join(", ")}
+                        chain {site.chain} · site {site.site}
+                        {site.residueIndices.length
+                          ? " · residues " +
+                            site.residueIndices.slice(0, 6).join(", ")
+                          : site.residueCount
+                            ? " · " + formatCount(site.residueCount) + " residues"
+                            : ""}
                       </small>
                     </span>
                     <span>{site.ligand}</span>
@@ -414,7 +381,7 @@ export default function AnionPDBPage({ setPage }) {
                     >
                       <input
                         checked={selectedSiteIds.has(site.id)}
-                        onChange={() => toggleSelectedSite(site.id)}
+                        onChange={() => toggleSelectedSite(site)}
                         type="checkbox"
                       />
                     </label>
@@ -429,7 +396,7 @@ export default function AnionPDBPage({ setPage }) {
               className="bulk-download-button"
               disabled={
                 isPreparingDownload ||
-                (!selectedSites.length && !filteredPdbPaths.length)
+                (!selectedSites.length && !totalSites)
               }
               onClick={downloadSelectedPdbFiles}
               type="button"
@@ -444,9 +411,9 @@ export default function AnionPDBPage({ setPage }) {
               <p className="bulk-download-count">
                 {formatCount(selectedSites.length)} selected
               </p>
-            ) : filteredPdbPaths.length ? (
+            ) : totalSites ? (
               <p className="bulk-download-count">
-                {formatCount(filteredPdbPaths.length)} filtered PDB files
+                {formatCount(totalSites)} filtered PDB files
               </p>
             ) : null}
             {downloadError ? (
