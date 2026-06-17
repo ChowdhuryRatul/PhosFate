@@ -7,8 +7,8 @@ LOCK_FILE="${LOCK_FILE:-/tmp/phosfate-backend-deploy.lock}"
 PUBLIC_API_URL="${PUBLIC_API_URL:-https://phosfate-api.structf.studio}"
 PM2_APP="${PM2_APP:-phosfate-runtime}"
 
-RSYNC="${RSYNC:-/usr/bin/rsync}"
-PM2="${PM2:-/home/chowdhurylab01/.local/bin/pm2}"
+RSYNC="${RSYNC:-$(command -v rsync || true)}"
+PM2="${PM2:-$(command -v pm2 || true)}"
 
 SOURCE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
@@ -40,7 +40,9 @@ flock -n 9 || {
 echo ">>> Deploying PhosFate backend from $SOURCE_DIR"
 echo ">>> Production backend dir: $BACKEND_DIR"
 
+test -n "$RSYNC"
 test -x "$RSYNC"
+test -n "$PM2"
 test -x "$PM2"
 test -d "$SOURCE_DIR/backend"
 mkdir -p "$BACKEND_DIR"
