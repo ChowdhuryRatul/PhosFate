@@ -1,4 +1,5 @@
 import { useState } from "react";
+import AccountStatus from "./AccountStatus";
 
 export default function Header({ page, setPage }) {
   const [openDropdown, setOpenDropdown] = useState(null);
@@ -6,6 +7,7 @@ export default function Header({ page, setPage }) {
   const pagePath = {
     anion: "/home",
     phosfate: "/PhosFate",
+    history: "/History",
   };
 
   const goTo = (target) => (event) => {
@@ -40,6 +42,13 @@ export default function Header({ page, setPage }) {
           onClick={goTo("phosfate")}
         >
           PhosFate pocket scoring
+        </a>
+        <a
+          className={page === "history" ? "pill active" : "pill"}
+          href={pagePath.history}
+          onClick={goTo("history")}
+        >
+          History
         </a>
         <button
           type="button"
@@ -98,6 +107,7 @@ export default function Header({ page, setPage }) {
         <a className="link" href="/home#lab">
           ChowdhuryLab
         </a>
+        <AccountStatus />
       </nav>
       {showGuide ? (
         <div className="guide-modal-backdrop">

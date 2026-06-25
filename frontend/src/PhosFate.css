@@ -13,8 +13,10 @@
 
 body.page-anion,
 body.page-phosfate,
+body.page-history,
 body.page-anion *,
-body.page-phosfate * {
+body.page-phosfate *,
+body.page-history * {
   color-scheme: light;
 }
 
@@ -101,7 +103,8 @@ body.page-anion nav {
 }
 body.page-anion .pill,
 body.page-anion .link,
-body.page-anion .nav-dropdown summary {
+body.page-anion .nav-dropdown summary,
+body.page-anion .account-pill {
   border: 1px solid var(--line);
   border-radius: 999px;
   padding: 12px 18px;
@@ -994,7 +997,8 @@ body.page-phosfate nav {
 }
 body.page-phosfate .pill,
 body.page-phosfate .link,
-body.page-phosfate .nav-dropdown summary {
+body.page-phosfate .nav-dropdown summary,
+body.page-phosfate .account-pill {
   border: 1px solid var(--line);
   border-radius: 999px;
   padding: 12px 18px;
@@ -2008,5 +2012,252 @@ body.page-phosfate .download-row .gray:disabled {
   }
   .guide-grid {
     grid-template-columns: 1fr;
+  }
+}
+
+/* Shared account history page */
+body.page-history {
+  margin: 0;
+  color: var(--ink);
+  background: #fff;
+  font-family:
+    -apple-system, BlinkMacSystemFont, "Inter", "Helvetica Neue", Arial,
+    sans-serif;
+  font-size: 16px;
+  line-height: normal;
+  letter-spacing: 0;
+  overflow-x: hidden;
+}
+body.page-history header {
+  min-height: 82px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 22px;
+  border-bottom: 1px solid var(--line);
+  gap: 18px;
+}
+body.page-history .brand {
+  display: flex;
+  align-items: flex-end;
+  gap: 18px;
+  white-space: nowrap;
+}
+body.page-history .brand-home {
+  display: block;
+  color: inherit;
+  text-decoration: none;
+}
+body.page-history .brand h1 {
+  font-size: 44px;
+  line-height: 0.95;
+  margin: 0;
+  font-weight: 500;
+  letter-spacing: 0;
+  color: var(--ink);
+}
+body.page-history .brand span {
+  color: #777;
+  font-size: 15px;
+  margin-bottom: 6px;
+  letter-spacing: 0;
+}
+body.page-history nav {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  max-width: 1080px;
+}
+body.page-history .pill,
+body.page-history .link,
+body.page-history .nav-dropdown summary,
+body.page-history .account-pill {
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 12px 18px;
+  font-size: 14px;
+  font-weight: 700;
+  background: white;
+  color: #222;
+  text-decoration: none;
+  letter-spacing: 0;
+}
+body.page-history .pill.active {
+  border-color: var(--blue);
+  color: var(--blue);
+  box-shadow: 0 0 0 1px rgba(39, 60, 245, 0.15) inset;
+  background: #f8f9ff;
+}
+body.page-history .link {
+  border: 0;
+  color: var(--blue);
+  padding: 8px;
+  font-weight: 800;
+}
+body.page-history .nav-dropdown {
+  position: relative;
+}
+body.page-history .nav-dropdown summary {
+  list-style: none;
+  cursor: pointer;
+}
+body.page-history .nav-dropdown summary::-webkit-details-marker {
+  display: none;
+}
+body.page-history .nav-panel {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 10px);
+  z-index: 5;
+  width: min(520px, calc(100vw - 44px));
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: #fff;
+  box-shadow: var(--shadow);
+  padding: 16px;
+  color: #555;
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.45;
+  letter-spacing: 0;
+}
+body.page-history .history-main {
+  display: block;
+  padding: 28px 22px 40px;
+}
+body.page-history .history-panel {
+  width: min(1180px, 100%);
+  margin: 0 auto;
+}
+body.page-history .history-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 0 0 18px;
+  flex-wrap: wrap;
+}
+body.page-history .history-actions button,
+body.page-history .primary-link {
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: #fff;
+  color: #222;
+  font-weight: 800;
+  font-size: 14px;
+  padding: 11px 16px;
+  text-decoration: none;
+}
+body.page-history .primary-link {
+  border-color: var(--blue);
+  background: var(--blue);
+  color: #fff;
+}
+body.page-history .history-notice,
+body.page-history .history-empty {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #f8f9ff;
+  color: #333;
+  padding: 14px 16px;
+  font-weight: 700;
+  margin: 0 0 14px;
+}
+body.page-history .history-table {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  overflow-x: auto;
+  background: #fff;
+}
+body.page-history .history-row {
+  min-width: 900px;
+  display: grid;
+  grid-template-columns: minmax(260px, 1.3fr) 140px minmax(220px, 1fr) 210px 110px;
+  gap: 16px;
+  align-items: center;
+  border-top: 1px solid var(--line);
+  padding: 14px 16px;
+}
+body.page-history .history-row:first-child {
+  border-top: 0;
+}
+body.page-history .history-head {
+  background: #f7f7fb;
+  color: #666;
+  font-size: 12px;
+  font-weight: 900;
+  letter-spacing: 0.08em;
+}
+body.page-history .history-row strong,
+body.page-history .history-row span {
+  display: block;
+}
+body.page-history .history-row span {
+  margin-top: 3px;
+  color: #777;
+  font-size: 13px;
+  word-break: break-word;
+}
+body.page-history .history-row a {
+  color: var(--blue);
+  font-weight: 800;
+  text-decoration: none;
+}
+body.page-history .status-tag {
+  display: inline-flex;
+  width: fit-content;
+  border: 1px solid #ddd;
+  border-radius: 999px;
+  padding: 5px 9px;
+  color: #555;
+  background: #fafafa;
+  font-size: 12px;
+  font-weight: 900;
+}
+body.page-history .status-succeeded {
+  border-color: #bedfc7;
+  background: #f2fbf4;
+  color: #1c6b32;
+}
+body.page-history .status-failed {
+  border-color: #f1b7b7;
+  background: #fff5f5;
+  color: #9f2323;
+}
+body.page-history .status-running {
+  border-color: #b9c5ff;
+  background: #f4f6ff;
+  color: #273cf5;
+}
+body.page-history .status-canceled {
+  border-color: #f2d19a;
+  background: #fff8ea;
+  color: #8a5a00;
+}
+
+@media (max-width: 900px) {
+  body.page-history header {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+  body.page-history .brand {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 4px;
+    white-space: normal;
+  }
+  body.page-history .brand h1 {
+    font-size: 36px;
+  }
+  body.page-history nav {
+    justify-content: flex-start;
+  }
+  body.page-history .pill,
+  body.page-history .link,
+  body.page-history .nav-dropdown summary,
+  body.page-history .account-pill {
+    padding: 10px 13px;
+    font-size: 13px;
   }
 }

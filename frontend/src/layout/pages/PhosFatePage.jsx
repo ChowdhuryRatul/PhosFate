@@ -14,6 +14,13 @@ import {
   getStoredBindingSite,
   useBindingSites,
 } from "../useBindingSites";
+import {
+  createJob,
+  downloadJobArtifact,
+  fetchAccountSession,
+  getJob,
+  supportsSharedAccountCookies,
+} from "../accountClient";
 
 const anionLabels = [
   { ligand: "Phosphate", label: "PO4", variant: "blue" },
@@ -163,6 +170,14 @@ const runStageLabels = {
   scoring: "Scoring",
 };
 
+const STRUCTF_JOB_TYPE = "anionpdb.phosfate.run";
+const STRUCTF_TERMINAL_STATUSES = new Set([
+  "succeeded",
+  "failed",
+  "canceled",
+  "expired",
+]);
+
 function formatRunProgress(event) {
   const label = runStageLabels[event?.stage] || "Running";
   const count =
@@ -172,6 +187,35 @@ function formatRunProgress(event) {
     stage: label + count,
     message: event?.message || "Running PhosFate...",
   };
+}
+
+function structfProgressMessage(job) {
+  const status = job?.status || "queued";
+  if (status === "queued") {
+    return { stage: "Queued", message: "Waiting for the StructF runner..." };
+  }
+  if (status === "claimed") {
+    return { stage: "Claimed", message: "StructF runner claimed this job." };
+  }
+  if (status === "running") {
+    return { stage: "Running", message: "Running PhosFate through StructF..." };
+  }
+  if (status === "succeeded") {
+    return { stage: "Complete", message: "StructF PhosFate job completed." };
+  }
+  return { stage: status, message: "StructF job status: " + status };
+}
+
+function unwrapStructFPhosFateArtifact(artifact) {
+  const result = artifact?.result && typeof artifact.result === "object"
+    ? artifact.result
+    : artifact;
+
+  if (!result || typeof result !== "object" || !Array.isArray(result.pockets)) {
+    throw new Error("StructF result artifact did not include PhosFate pockets.");
+  }
+
+  return result;
 }
 
 export default function PhosFatePage({ setPage }) {
@@ -260,6 +304,137 @@ export default function PhosFatePage({ setPage }) {
     downloadSitesCsv([activeSite], activeSite.id + ".csv");
   };
 
+  const applyPhosFateResult = (finalPayload, statusPrefix = "Completed") => {
+    setPhosFateResult(finalPayload);
+    setSelectedPredictionIndex(0);
+    setRunStatus(
+      statusPrefix +
+        " " +
+        (finalPayload.pockets?.length ?? 0) +
+        " pocket predictions for " +
+        finalPayload.jobName +
+        ".",
+    );
+    setRunProgress({
+      stage: "Complete",
+      message:
+        "Completed " +
+        (finalPayload.pockets?.length ?? 0) +
+        " pocket predictions.",
+    });
+  };
+
+  const runDirectPhosFate = async (payload) => {
+    const response = await fetch(API_BASE + "/api/phosfate/run?stream=1", {
+      method: "POST",
+      headers: {
+        Accept: "application/x-ndjson",
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(payload),
+    });
+
+    if (!response.ok) {
+      const data = await response.json().catch(() => ({}));
+      throw new Error(data.details || data.error || "PhosFate run failed.");
+    }
+
+    const reader = response.body?.getReader();
+
+    if (!reader) {
+      throw new Error("Browser does not support PhosFate progress streaming.");
+    }
+
+    const decoder = new TextDecoder();
+    let buffer = "";
+    let finalPayload = null;
+
+    while (true) {
+      const { value, done } = await reader.read();
+      buffer += decoder.decode(value || new Uint8Array(), { stream: !done });
+
+      const lines = buffer.split(/\r?\n/);
+      buffer = lines.pop() || "";
+
+      for (const line of lines) {
+        if (!line.trim()) {
+          continue;
+        }
+
+        const event = JSON.parse(line);
+
+        if (event.type === "progress") {
+          const progress = formatRunProgress(event);
+          setRunProgress(progress);
+          setRunStatus(progress.message);
+        } else if (event.type === "complete") {
+          finalPayload = event.payload;
+        } else if (event.type === "error") {
+          throw new Error(event.details || event.error || "PhosFate run failed.");
+        }
+      }
+
+      if (done) {
+        break;
+      }
+    }
+
+    if (!finalPayload) {
+      throw new Error("PhosFate run ended without a result.");
+    }
+
+    applyPhosFateResult(finalPayload);
+  };
+
+  const runStructFPhosFate = async (payload) => {
+    const created = await createJob({
+      appSlug: "anionpdb",
+      jobType: STRUCTF_JOB_TYPE,
+      inputSummary: payload,
+      publicLabel: "PhosFate " + payload.jobName,
+      idempotencyKey:
+        "phosfate-" +
+        Date.now().toString(36) +
+        "-" +
+        Math.random().toString(36).slice(2, 8),
+    });
+
+    const jobId = created.job?.id;
+    if (!jobId) {
+      throw new Error("StructF account API did not return a job id.");
+    }
+
+    setRunStatus("StructF job " + jobId + " created.");
+    setRunProgress({ stage: "Queued", message: "Waiting for the StructF runner..." });
+
+    const started = Date.now();
+    while (true) {
+      const body = await getJob(jobId);
+      const job = body.job;
+      const progress = structfProgressMessage(job);
+      setRunProgress(progress);
+      setRunStatus(progress.message);
+
+      if (!STRUCTF_TERMINAL_STATUSES.has(job.status)) {
+        if (Date.now() - started > 60 * 60 * 1000) {
+          throw new Error("StructF PhosFate job timed out.");
+        }
+        await new Promise((resolve) => setTimeout(resolve, 2000));
+        continue;
+      }
+
+      if (job.status !== "succeeded") {
+        throw new Error(
+          job.errorMessage || job.errorCode || "StructF job ended with " + job.status,
+        );
+      }
+
+      const artifact = await downloadJobArtifact(job.id, "result.json");
+      applyPhosFateResult(unwrapStructFPhosFateArtifact(artifact), "Completed StructF");
+      return;
+    }
+  };
+
   const runPhosFate = async () => {
     const sequence = String(queryOverride || "").replace(/\s+/g, "").toUpperCase();
 
@@ -272,89 +447,32 @@ export default function PhosFatePage({ setPage }) {
       return;
     }
 
+    const payload = {
+      jobName,
+      sequence,
+      topK: 5,
+      distance: 5.0,
+    };
+
     setIsRunning(true);
     setRunStatus("Starting PhosFate inference...");
 
     try {
-      const response = await fetch(API_BASE + "/api/phosfate/run?stream=1", {
-        method: "POST",
-        headers: {
-          Accept: "application/x-ndjson",
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          jobName,
-          sequence,
-          topK: 5,
-          distance: 5.0,
-        }),
-      });
-
-      if (!response.ok) {
-        const data = await response.json().catch(() => ({}));
-        throw new Error(data.details || data.error || "PhosFate run failed.");
-      }
-
-      const reader = response.body?.getReader();
-
-      if (!reader) {
-        throw new Error("Browser does not support PhosFate progress streaming.");
-      }
-
-      const decoder = new TextDecoder();
-      let buffer = "";
-      let finalPayload = null;
-
-      while (true) {
-        const { value, done } = await reader.read();
-        buffer += decoder.decode(value || new Uint8Array(), { stream: !done });
-
-        const lines = buffer.split(/\r?\n/);
-        buffer = lines.pop() || "";
-
-        for (const line of lines) {
-          if (!line.trim()) {
-            continue;
-          }
-
-          const event = JSON.parse(line);
-
-          if (event.type === "progress") {
-            const progress = formatRunProgress(event);
-            setRunProgress(progress);
-            setRunStatus(progress.message);
-          } else if (event.type === "complete") {
-            finalPayload = event.payload;
-          } else if (event.type === "error") {
-            throw new Error(event.details || event.error || "PhosFate run failed.");
-          }
-        }
-
-        if (done) {
-          break;
+      let useStructF = false;
+      if (supportsSharedAccountCookies()) {
+        try {
+          const session = await fetchAccountSession();
+          useStructF = session?.mode === "user";
+        } catch {
+          useStructF = false;
         }
       }
 
-      if (!finalPayload) {
-        throw new Error("PhosFate run ended without a result.");
+      if (useStructF) {
+        await runStructFPhosFate(payload);
+      } else {
+        await runDirectPhosFate(payload);
       }
-
-      setPhosFateResult(finalPayload);
-      setSelectedPredictionIndex(0);
-      setRunStatus(
-        "Completed " +
-          (finalPayload.pockets?.length ?? 0) +
-          " pocket predictions for " +
-          finalPayload.jobName +
-          ".",
-      );
-      setRunProgress({
-        stage: "Complete",
-        message:
-          "Completed " +
-          (finalPayload.pockets?.length ?? 0) +
-          " pocket predictions.",
-      });
     } catch (error) {
       setRunError(error.message || String(error));
       setRunStatus("");

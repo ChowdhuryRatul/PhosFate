@@ -1,22 +1,5 @@
 import { useEffect, useRef, useState } from "react";
 
-function formatPocketDisplayName(value) {
-  const filename = String(value ?? "")
-    .split("/")
-    .pop();
-
-  const match = filename.match(
-    /^([A-Za-z0-9]+)_chain-([A-Za-z0-0]+)_site-([0-9]+)\.pdb$/i,
-  );
-
-  if (!match) {
-    return filename.replace(/\.pdbs$/i, "");
-  }
-  const [, pdbId, chain, site] = match;
-
-  return `${pdbId.toUpperCase()}_Chain-${chain.toUpperCase()} (Site: ${site})`;
-}
-
 function resolveStructureUrl(path) {
   if (!path) {
     return "";
@@ -28,27 +11,6 @@ function resolveStructureUrl(path) {
 
   const normalizedPath = path.startsWith("/") ? path : "/" + path;
   return new URL(normalizedPath, window.location.origin).href;
-}
-
-// Label anion
-const ANION_RESNAMES = new Set([
-  "PO4",
-  "SO4",
-  "NO3",
-  "CO3",
-  "CL",
-  "CLA",
-  "PHO",
-  "SUL",
-  "NIT",
-  "CAR",
-]);
-
-function distance(a, b) {
-  const dx = a.x - b.x;
-  const dy = a.y - b.y;
-  const dz = a.z - b.z;
-  return Math.sqrt(dx * dx + dy * dy + dz * dz);
 }
 
 function averagePosition(atoms) {
@@ -66,10 +28,6 @@ function averagePosition(atoms) {
     y: total.y / atoms.length,
     z: total.z / atoms.length,
   };
-}
-
-function getResidueKey(atom) {
-  return `${atom.chain ?? ""}:${atom.resn}:${atom.resi}`;
 }
 
 function addPocketLabels(viewer, showResidueLabels = false) {

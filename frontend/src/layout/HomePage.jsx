@@ -1,11 +1,13 @@
 import { useEffect, useState } from "react";
 import "../PhosFate.css";
 import AnionPDBPage from "./pages/AnionPDBPage";
+import HistoryPage from "./pages/HistoryPage";
 import PhosFatePage from "./pages/PhosFatePage";
 
 const pagePath = {
   anion: "/home",
   phosfate: "/PhosFate",
+  history: "/History",
 };
 
 const getPageFromLocation = () => {
@@ -14,6 +16,9 @@ const getPageFromLocation = () => {
 
   if (pathname === "/phosfate" || hash === "#phosfate") {
     return "phosfate";
+  }
+  if (pathname === "/history" || hash === "#history") {
+    return "history";
   }
 
   return "anion";
@@ -25,6 +30,7 @@ export default function HomePage() {
   useEffect(() => {
     document.body.classList.toggle("page-anion", page === "anion");
     document.body.classList.toggle("page-phosfate", page === "phosfate");
+    document.body.classList.toggle("page-history", page === "history");
 
     const nextPath = pagePath[page];
     if (window.location.pathname !== nextPath || window.location.hash) {
@@ -45,9 +51,13 @@ export default function HomePage() {
     };
   }, []);
 
-  return page === "anion" ? (
-    <AnionPDBPage setPage={setPage} />
-  ) : (
-    <PhosFatePage setPage={setPage} />
-  );
+  if (page === "phosfate") {
+    return <PhosFatePage setPage={setPage} />;
+  }
+
+  if (page === "history") {
+    return <HistoryPage setPage={setPage} />;
+  }
+
+  return <AnionPDBPage setPage={setPage} />;
 }
