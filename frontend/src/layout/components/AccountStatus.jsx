@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import {
   accountLoginUrl,
   fetchAccountSession,
+  logoutSession,
   supportsSharedAccountCookies,
 } from "../accountClient";
 
@@ -41,15 +42,25 @@ export default function AccountStatus() {
     };
   }, [supported]);
 
+  async function handleLogout() {
+    setLoadState("loading");
+    try {
+      await logoutSession();
+      await loadSession();
+    } catch {
+      setLoadState("error");
+    }
+  }
+
   if (!supported) {
     return null;
   }
 
   if (session?.mode === "user" && session.user) {
     return (
-      <a className="account-pill" href={accountLoginUrl()} title={session.user.email}>
-        Account
-      </a>
+      <button className="account-pill" type="button" onClick={handleLogout} title={session.user.email}>
+        {loadState === "loading" ? "Signing out" : "Sign out"}
+      </button>
     );
   }
 

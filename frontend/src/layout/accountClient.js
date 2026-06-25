@@ -80,6 +80,16 @@ export async function getCsrfToken() {
   return body.csrfToken;
 }
 
+export async function logoutSession() {
+  const csrfToken = await getCsrfToken();
+  return accountRequest("/api/auth/logout", {
+    method: "POST",
+    headers: {
+      "X-CSRF-Token": csrfToken,
+    },
+  });
+}
+
 export async function listJobs({ limit = 20, appSlug } = {}) {
   const params = new URLSearchParams({ limit: String(limit) });
   if (appSlug) {
