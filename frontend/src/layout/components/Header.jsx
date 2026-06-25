@@ -1,9 +1,17 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import AccountStatus from "./AccountStatus";
+import {
+  fetchAccountSession,
+  supportsSharedAccountCookies,
+} from "../accountClient";
+
+const ACCOUNT_SESSION_EVENT = "structf-account-session-change";
 
 export default function Header({ page, setPage }) {
   const [openDropdown, setOpenDropdown] = useState(null);
   const [showGuide, setShowGuide] = useState(false);
+  const [session, setSession] = useState(null);
+  const canShowHistory = session?.mode === "user";
   const pagePath = {
     anion: "/home",
     phosfate: "/PhosFate",
@@ -15,6 +23,27 @@ export default function Header({ page, setPage }) {
     setOpenDropdown(null);
     setPage(target);
   };
+
+  useEffect(() => {
+    if (!supportsSharedAccountCookies()) {
+      return undefined;
+    }
+
+    const controller = new AbortController();
+    fetchAccountSession(controller.signal)
+      .then(setSession)
+      .catch(() => setSession(null));
+
+    const onSessionChange = (event) => {
+      setSession(event.detail || null);
+    };
+
+    window.addEventListener(ACCOUNT_SESSION_EVENT, onSessionChange);
+    return () => {
+      controller.abort();
+      window.removeEventListener(ACCOUNT_SESSION_EVENT, onSessionChange);
+    };
+  }, []);
 
   return (
     <header>
@@ -43,13 +72,15 @@ export default function Header({ page, setPage }) {
         >
           PhosFate pocket scoring
         </a>
-        <a
-          className={page === "history" ? "pill active" : "pill"}
-          href={pagePath.history}
-          onClick={goTo("history")}
-        >
-          History
-        </a>
+        {canShowHistory ? (
+          <a
+            className={page === "history" ? "pill active" : "pill"}
+            href={pagePath.history}
+            onClick={goTo("history")}
+          >
+            History
+          </a>
+        ) : null}
         <button
           type="button"
           className="pill"

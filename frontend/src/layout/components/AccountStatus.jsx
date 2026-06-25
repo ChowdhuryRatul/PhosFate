@@ -6,6 +6,8 @@ import {
   supportsSharedAccountCookies,
 } from "../accountClient";
 
+const ACCOUNT_SESSION_EVENT = "structf-account-session-change";
+
 export default function AccountStatus() {
   const [session, setSession] = useState(null);
   const [loadState, setLoadState] = useState("idle");
@@ -17,12 +19,18 @@ export default function AccountStatus() {
     try {
       const nextSession = await fetchAccountSession(signal);
       setSession(nextSession);
+      window.dispatchEvent(
+        new CustomEvent(ACCOUNT_SESSION_EVENT, { detail: nextSession }),
+      );
       setLoadState("ready");
     } catch (error) {
       if (error instanceof DOMException && error.name === "AbortError") {
         return;
       }
       setSession(null);
+      window.dispatchEvent(
+        new CustomEvent(ACCOUNT_SESSION_EVENT, { detail: null }),
+      );
       setLoadState("error");
     }
   }
