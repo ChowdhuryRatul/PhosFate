@@ -47,7 +47,7 @@ export default function AccountStatus() {
 
   if (session?.mode === "user" && session.user) {
     return (
-      <a className="account-pill" href={accountLoginUrl} title={session.user.email}>
+      <a className="account-pill" href={accountLoginUrl()} title={session.user.email}>
         Account
       </a>
     );
@@ -62,7 +62,7 @@ export default function AccountStatus() {
   }
 
   return (
-    <a className="account-pill" href={accountLoginUrl}>
+    <a className="account-pill" href={accountLoginUrl()}>
       {loadState === "loading" ? "Checking..." : "Sign in"}
     </a>
   );

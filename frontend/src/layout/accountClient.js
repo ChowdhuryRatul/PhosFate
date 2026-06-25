@@ -9,9 +9,19 @@ export const accountApiBaseUrl = cleanBaseUrl(
   import.meta.env.VITE_ACCOUNT_API_BASE_URL,
 );
 
-export const accountLoginUrl =
+const accountLoginBaseUrl =
   import.meta.env.VITE_ACCOUNT_LOGIN_URL?.trim() ||
   accountApiBaseUrl + "/login";
+
+export function accountLoginUrl(returnTo) {
+  const url = new URL(accountLoginBaseUrl);
+  const destination =
+    returnTo || (typeof window !== "undefined" ? window.location.href : "");
+  if (destination) {
+    url.searchParams.set("return_to", destination);
+  }
+  return url.toString();
+}
 
 export function supportsSharedAccountCookies() {
   const hostname = window.location.hostname.toLowerCase();

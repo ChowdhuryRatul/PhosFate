@@ -99,7 +99,7 @@ export default function HistoryPage({ setPage }) {
               {loading ? "Refreshing" : "Refresh"}
             </button>
             {session?.mode !== "user" ? (
-              <a className="primary-link" href={accountLoginUrl}>
+              <a className="primary-link" href={accountLoginUrl()}>
                 Sign in
               </a>
             ) : null}
